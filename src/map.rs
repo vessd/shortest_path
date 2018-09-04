@@ -101,6 +101,26 @@ impl Map {
         }
     }
 
+    pub fn print_path(&self, path: Vec<MapPos>) {
+        let mut matrix = vec![vec![""; self.cols - 1]; self.data.len() / self.cols - 1];
+        for i in 1..self.cols - 1 {
+            for j in 1..self.data.len() / self.cols - 1 {
+                match self.data[i * self.cols + j] {
+                    Cell::Passable => matrix[i - 1][j - 1] = "0",
+                    Cell::Impassable => matrix[i - 1][j - 1] = "1",
+                }
+            }
+        }
+        for pos in path {
+            matrix[pos.x][pos.y] = "2";
+        }
+        for row in matrix {
+            for cell in row {
+                print!("{} ", cell);
+            }
+            println!("");
+        }
+    }
     //Расстояние Чебышёва
     fn distance(p: MapPos, q: MapPos) -> usize {
         let abs_sub = |a: usize, b: usize| if a > b { a - b } else { b - a };
@@ -111,11 +131,11 @@ impl Map {
         let mut vec = Vec::with_capacity(map[&goal].cost);
         let mut current = goal;
         while let Some(info) = map.remove(&current) {
+            vec.push(current);
             if current == info.parent {
                 break;
             }
             current = info.parent;
-            vec.push(current);
         }
         vec
     }

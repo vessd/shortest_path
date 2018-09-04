@@ -13,8 +13,11 @@ fn main() {
     m.set_wall(MapPos::new(1, 3));
     m.set_wall(MapPos::new(2, 2));
     m.set_wall(MapPos::new(3, 1));
+    //m.set_wall(MapPos::new(3, 2));
     m.set_wall(MapPos::new(3, 3));
+    m.set_wall(MapPos::new(4, 3));
     m.print_map();
     let vec = m.shortest_path(MapPos::new(0, 0), MapPos::new(4, 4));
-    println!("{:?}", vec);
+    println!("");
+    m.print_path(vec);
 }
