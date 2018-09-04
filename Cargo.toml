@@ -4,3 +4,8 @@ version = "0.1.0"
 authors = ["Sergey Veselkov <veselkovsd@yandex.ru>"]
 
 [dependencies]
+#gui
+#conrod = "0.61.1"
+serde = "1.0.76"
+serde_derive = "1.0.76"
+bincode = "1.0.1"
