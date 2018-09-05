@@ -11,7 +11,7 @@ fn main() {
     let mut m = Map::new(5, 5);
     m.set_wall(MapPos::new(1, 2));
     m.set_wall(MapPos::new(1, 3));
-    m.set_wall(MapPos::new(2, 2));
+    //m.set_wall(MapPos::new(2, 2));
     m.set_wall(MapPos::new(3, 1));
     //m.set_wall(MapPos::new(3, 2));
     m.set_wall(MapPos::new(3, 3));

@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::ops::Index;
 use std::vec::IntoIter;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,17 +33,20 @@ impl MapPos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct PosState {
     position: MapPos,
-    cost: usize,
+    cost: f64,
 }
+
+impl Eq for PosState {}
 
 impl Ord for PosState {
     fn cmp(&self, other: &PosState) -> Ordering {
         other
             .cost
-            .cmp(&self.cost)
+            .partial_cmp(&self.cost)
+            .unwrap()
             .then_with(|| self.position.cmp(&other.position))
     }
 }
@@ -56,13 +60,23 @@ impl PartialOrd for PosState {
 #[derive(Debug)]
 struct PosInfo {
     parent: MapPos,
-    cost: usize,
+    cost: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Map {
     cols: usize,
     data: Vec<Cell>,
+}
+
+impl Index<usize> for Map {
+    type Output = [Cell];
+
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        let i = index * self.cols;
+        &self.data[i..i + self.cols]
+    }
 }
 
 impl Map {
@@ -92,7 +106,7 @@ impl Map {
     pub fn print_map(&self) {
         for i in 1..self.cols - 1 {
             for j in 1..self.data.len() / self.cols - 1 {
-                match self.data[i * self.cols + j] {
+                match self[i][j] {
                     Cell::Passable => print!("0 "),
                     Cell::Impassable => print!("1 "),
                 }
@@ -102,10 +116,10 @@ impl Map {
     }
 
     pub fn print_path(&self, path: Vec<MapPos>) {
-        let mut matrix = vec![vec![""; self.cols - 1]; self.data.len() / self.cols - 1];
+        let mut matrix = vec![vec![""; self.cols - 2]; self.data.len() / self.cols - 2];
         for i in 1..self.cols - 1 {
             for j in 1..self.data.len() / self.cols - 1 {
-                match self.data[i * self.cols + j] {
+                match self[i][j] {
                     Cell::Passable => matrix[i - 1][j - 1] = "0",
                     Cell::Impassable => matrix[i - 1][j - 1] = "1",
                 }
@@ -121,14 +135,14 @@ impl Map {
             println!("");
         }
     }
-    //Расстояние Чебышёва
-    fn distance(p: MapPos, q: MapPos) -> usize {
-        let abs_sub = |a: usize, b: usize| if a > b { a - b } else { b - a };
-        abs_sub(p.x, q.x).max(abs_sub(p.y, q.y))
+
+    //евклидово расстояние
+    fn distance(p: MapPos, q: MapPos) -> f64 {
+        ((p.x as f64 - q.x as f64).powi(2) + (p.y as f64 - q.y as f64).powi(2)).sqrt()
     }
 
     fn reconstruct_path(mut map: HashMap<MapPos, PosInfo>, goal: MapPos) -> Vec<MapPos> {
-        let mut vec = Vec::with_capacity(map[&goal].cost);
+        let mut vec = Vec::with_capacity(map[&goal].cost as usize);
         let mut current = goal;
         while let Some(info) = map.remove(&current) {
             vec.push(current);
@@ -142,15 +156,42 @@ impl Map {
 
     fn neighbors(&self, pos: MapPos) -> IntoIter<MapPos> {
         let mut vec = Vec::with_capacity(8);
-        for i in pos.x..pos.x + 3 {
-            for j in pos.y..pos.y + 3 {
-                if !(i == pos.x + 1 && j == pos.y + 1) {
-                    if self.data[i * self.cols + j] == Cell::Passable {
-                        //Возвращаем координаты без учёта стены по периметру
-                        vec.push(MapPos::new(i - 1, j - 1));
-                    }
-                }
-            }
+        let mut s = [false; 4];
+        let mut d = [false; 4];
+        let pos = MapPos::new(pos.x + 1, pos.y + 1);
+        if self[pos.x - 1][pos.y] == Cell::Passable {
+            s[0] = true;
+            vec.push(MapPos::new(pos.x - 2, pos.y - 1));
+        }
+        if self[pos.x][pos.y + 1] == Cell::Passable {
+            s[1] = true;
+            vec.push(MapPos::new(pos.x - 1, pos.y));
+        }
+        if self[pos.x + 1][pos.y] == Cell::Passable {
+            s[2] = true;
+            vec.push(MapPos::new(pos.x, pos.y - 1));
+        }
+        if self[pos.x][pos.y - 1] == Cell::Passable {
+            s[3] = true;
+            vec.push(MapPos::new(pos.x - 1, pos.y - 2));
+        }
+
+        d[0] = s[3] || s[0];
+        d[1] = s[0] || s[1];
+        d[2] = s[1] || s[2];
+        d[3] = s[2] || s[3];
+
+        if d[0] && self[pos.x - 1][pos.y - 1] == Cell::Passable {
+            vec.push(MapPos::new(pos.x - 2, pos.y - 2));
+        }
+        if d[1] && self[pos.x - 1][pos.y + 1] == Cell::Passable {
+            vec.push(MapPos::new(pos.x - 2, pos.y));
+        }
+        if d[2] && self[pos.x + 1][pos.y + 1] == Cell::Passable {
+            vec.push(MapPos::new(pos.x, pos.y));
+        }
+        if d[3] && self[pos.x + 1][pos.y - 1] == Cell::Passable {
+            vec.push(MapPos::new(pos.x, pos.y - 2));
         }
         vec.into_iter()
     }
@@ -166,7 +207,7 @@ impl Map {
             start,
             PosInfo {
                 parent: start,
-                cost: 0,
+                cost: 0f64,
             },
         );
         while let Some(current) = heap.pop() {
@@ -174,7 +215,7 @@ impl Map {
                 break;
             }
             for pos in self.neighbors(current.position) {
-                let new_cost = map[&current.position].cost + Map::distance(start, pos);
+                let new_cost = map[&current.position].cost + Map::distance(current.position, pos);
                 if let Some(info) = map.get(&pos) {
                     if new_cost >= info.cost {
                         continue;
