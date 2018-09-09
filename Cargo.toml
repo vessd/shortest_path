@@ -4,8 +4,10 @@ version = "0.1.0"
 authors = ["Sergey Veselkov <veselkovsd@yandex.ru>"]
 
 [dependencies]
-#gui
-#conrod = "0.61.1"
+conrod = { version = "0.61.1", features = ["gfx_rs", "winit"] }
 serde = "1.0.76"
 serde_derive = "1.0.76"
 bincode = "1.0.1"
+glutin = "0.17.0"
+winit = "0.16.2"
+gfx_window_glutin = "0.25.0"
