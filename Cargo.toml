@@ -4,10 +4,7 @@ version = "0.1.0"
 authors = ["Sergey Veselkov <veselkovsd@yandex.ru>"]
 
 [dependencies]
-conrod = { version = "0.61.1", features = ["gfx_rs", "winit"] }
-serde = "1.0.76"
-serde_derive = "1.0.76"
+conrod = { version = "0.61.1", features = ["glium", "winit"] }
+serde = "1.0.78"
+serde_derive = "1.0.78"
 bincode = "1.0.1"
-glutin = "0.17.0"
-winit = "0.16.2"
-gfx_window_glutin = "0.25.0"
