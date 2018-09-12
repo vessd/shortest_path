@@ -1,15 +1,18 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::ops::Index;
+use std::ops::IndexMut;
 use std::vec::IntoIter;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Cell {
     Passable,
     Impassable,
+    Start,
+    Finish,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MapPos {
     x: usize,
     y: usize,
@@ -67,6 +70,8 @@ struct PosInfo {
 pub struct Map {
     cols: usize,
     data: Vec<Cell>,
+    start: MapPos,
+    finish: MapPos,
 }
 
 impl Index<usize> for Map {
@@ -74,8 +79,16 @@ impl Index<usize> for Map {
 
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
-        let i = index * self.cols;
-        &self.data[i..i + self.cols]
+        let i = (index + 1) * self.cols;
+        &self.data[i + 1..i + self.cols - 1]
+    }
+}
+
+impl IndexMut<usize> for Map {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        let i = (index + 1) * self.cols;
+        &mut self.data[i + 1..i + self.cols - 1]
     }
 }
 
@@ -83,57 +96,61 @@ impl Map {
     pub fn new(cols: usize, rows: usize) -> Self {
         //Увеличиваем рамер карты, для того чтобы сделать стену по периметру,
         //это позволит не проверять границы при поиске соседей.
+        if cols < 2 && rows < 2 {
+            panic!("");
+        }
+        let start = MapPos::new(0, 0);
+        let finish = MapPos::new(rows - 1, cols - 1);
         let cols = cols + 2;
         let rows = rows + 2;
-        let mut data = vec![Cell::Passable; cols * rows];
-        //Стена сверху и снизу
-        for i in 0..cols {
-            data[i] = Cell::Impassable;
-            data[cols * (rows - 1) + i] = Cell::Impassable;
-        }
+        let data = vec![Cell::Passable; cols * rows];
+        let mut map = Map {
+            cols,
+            data,
+            start,
+            finish,
+        };
         //Стена слева и справа
         for i in 0..rows {
-            data[cols * i] = Cell::Impassable;
-            data[cols * (i + 1) - 1] = Cell::Impassable;
+            *map.get_mut(i, 0) = Cell::Impassable;
+            *map.get_mut(i, cols - 1) = Cell::Impassable;
         }
-        Map { cols, data }
+        //Стена сверху и снизу
+        for j in 0..cols {
+            *map.get_mut(0, j) = Cell::Impassable;
+            *map.get_mut(rows - 1, j) = Cell::Impassable;
+        }
+        map[start.x][start.y] = Cell::Start;
+        map[finish.x][finish.y] = Cell::Finish;
+        map
+    }
+
+    fn get(&self, x: usize, y: usize) -> Cell {
+        self.data[x * self.cols + y]
+    }
+
+    fn get_mut(&mut self, x: usize, y: usize) -> &mut Cell {
+        &mut self.data[x * self.cols + y]
     }
 
     pub fn set_wall(&mut self, pos: MapPos) {
-        self.data[(pos.x + 1) * self.cols + pos.y + 1] = Cell::Impassable;
-    }
-
-    pub fn print_map(&self) {
-        for i in 1..self.cols - 1 {
-            for j in 1..self.data.len() / self.cols - 1 {
-                match self[i][j] {
-                    Cell::Passable => print!("0 "),
-                    Cell::Impassable => print!("1 "),
-                }
-            }
-            println!("");
+        if self.start != pos && self.finish != pos {
+            self[pos.x][pos.y] = Cell::Impassable;
         }
     }
 
-    pub fn print_path(&self, path: Vec<MapPos>) {
-        let mut matrix = vec![vec![""; self.cols - 2]; self.data.len() / self.cols - 2];
-        for i in 1..self.cols - 1 {
-            for j in 1..self.data.len() / self.cols - 1 {
-                match self[i][j] {
-                    Cell::Passable => matrix[i - 1][j - 1] = "0",
-                    Cell::Impassable => matrix[i - 1][j - 1] = "1",
-                }
-            }
-        }
-        for pos in path {
-            matrix[pos.x][pos.y] = "2";
-        }
-        for row in matrix {
-            for cell in row {
-                print!("{} ", cell);
-            }
-            println!("");
-        }
+    pub fn set_start(&mut self, pos: MapPos) {
+        let start = self.start;
+        self[start.x][start.y] = Cell::Passable;
+        self[pos.x][pos.y] = Cell::Start;
+        self.start = pos;
+    }
+
+    pub fn set_finish(&mut self, pos: MapPos) {
+        let finish = self.finish;
+        self[finish.x][finish.y] = Cell::Passable;
+        self[pos.x][pos.y] = Cell::Finish;
+        self.finish = pos;
     }
 
     //евклидово расстояние
@@ -141,10 +158,10 @@ impl Map {
         ((p.x as f64 - q.x as f64).powi(2) + (p.y as f64 - q.y as f64).powi(2)).sqrt()
     }
 
-    fn reconstruct_path(mut map: HashMap<MapPos, PosInfo>, goal: MapPos) -> Vec<MapPos> {
-        let mut vec = Vec::with_capacity(map[&goal].cost as usize);
-        let mut current = goal;
-        while let Some(info) = map.remove(&current) {
+    fn reconstruct_path(&self, map: HashMap<MapPos, PosInfo>) -> Vec<MapPos> {
+        let mut vec = Vec::with_capacity(map[&self.finish].cost as usize);
+        let mut current = self.finish;
+        while let Some(info) = map.get(&current) {
             vec.push(current);
             if current == info.parent {
                 break;
@@ -159,19 +176,19 @@ impl Map {
         let mut s = [false; 4];
         let mut d = [false; 4];
         let pos = MapPos::new(pos.x + 1, pos.y + 1);
-        if self[pos.x - 1][pos.y] == Cell::Passable {
+        if self.get(pos.x - 1, pos.y) != Cell::Impassable {
             s[0] = true;
             vec.push(MapPos::new(pos.x - 2, pos.y - 1));
         }
-        if self[pos.x][pos.y + 1] == Cell::Passable {
+        if self.get(pos.x, pos.y + 1) != Cell::Impassable {
             s[1] = true;
             vec.push(MapPos::new(pos.x - 1, pos.y));
         }
-        if self[pos.x + 1][pos.y] == Cell::Passable {
+        if self.get(pos.x + 1, pos.y) != Cell::Impassable {
             s[2] = true;
             vec.push(MapPos::new(pos.x, pos.y - 1));
         }
-        if self[pos.x][pos.y - 1] == Cell::Passable {
+        if self.get(pos.x, pos.y - 1) != Cell::Impassable {
             s[3] = true;
             vec.push(MapPos::new(pos.x - 1, pos.y - 2));
         }
@@ -181,37 +198,37 @@ impl Map {
         d[2] = s[1] || s[2];
         d[3] = s[2] || s[3];
 
-        if d[0] && self[pos.x - 1][pos.y - 1] == Cell::Passable {
+        if d[0] && self.get(pos.x - 1, pos.y - 1) != Cell::Impassable {
             vec.push(MapPos::new(pos.x - 2, pos.y - 2));
         }
-        if d[1] && self[pos.x - 1][pos.y + 1] == Cell::Passable {
+        if d[1] && self.get(pos.x - 1, pos.y + 1) != Cell::Impassable {
             vec.push(MapPos::new(pos.x - 2, pos.y));
         }
-        if d[2] && self[pos.x + 1][pos.y + 1] == Cell::Passable {
+        if d[2] && self.get(pos.x + 1, pos.y + 1) != Cell::Impassable {
             vec.push(MapPos::new(pos.x, pos.y));
         }
-        if d[3] && self[pos.x + 1][pos.y - 1] == Cell::Passable {
+        if d[3] && self.get(pos.x + 1, pos.y - 1) != Cell::Impassable {
             vec.push(MapPos::new(pos.x, pos.y - 2));
         }
         vec.into_iter()
     }
 
-    pub fn shortest_path(&self, start: MapPos, goal: MapPos) -> Vec<MapPos> {
+    pub fn shortest_path(&self) -> Vec<MapPos> {
         let mut heap = BinaryHeap::new();
         let mut map = HashMap::new();
         heap.push(PosState {
-            position: start,
-            cost: Map::distance(start, goal),
+            position: self.start,
+            cost: Map::distance(self.start, self.finish),
         });
         map.insert(
-            start,
+            self.start,
             PosInfo {
-                parent: start,
+                parent: self.start,
                 cost: 0f64,
             },
         );
         while let Some(current) = heap.pop() {
-            if current.position == goal {
+            if current.position == self.finish {
                 break;
             }
             for pos in self.neighbors(current.position) {
@@ -223,7 +240,7 @@ impl Map {
                 }
                 heap.push(PosState {
                     position: pos,
-                    cost: new_cost + Map::distance(pos, goal),
+                    cost: new_cost + Map::distance(pos, self.finish),
                 });
                 map.insert(
                     pos,
@@ -234,6 +251,6 @@ impl Map {
                 );
             }
         }
-        Map::reconstruct_path(map, goal)
+        self.reconstruct_path(map)
     }
 }

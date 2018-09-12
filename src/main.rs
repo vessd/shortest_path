@@ -9,10 +9,13 @@ mod map;
 
 use conrod::backend::glium::glium::{self, Surface};
 use conrod::{color, widget, Colorable, Positionable, Widget};
-use map::{Map, MapPos};
+use map::{Cell, Map, MapPos};
 
-const WIDTH: u32 = 800;
-const HEIGHT: u32 = 600;
+const COLS: usize = 32;
+const ROWS: usize = 18;
+
+const WIDTH: usize = COLS * 32;
+const HEIGHT: usize = ROWS * 32;
 
 /// In most of the examples the `glutin` crate is used for providing the window context and
 /// events while the `glium` crate is used for displaying `conrod::render::Primitives` to the
@@ -76,24 +79,23 @@ impl EventLoop {
 }
 
 fn main() {
-    let mut m = Map::new(5, 5);
+    let mut m = Map::new(COLS, ROWS);
     m.set_wall(MapPos::new(1, 2));
     m.set_wall(MapPos::new(1, 3));
     //m.set_wall(MapPos::new(2, 2));
     m.set_wall(MapPos::new(3, 1));
-    //m.set_wall(MapPos::new(3, 2));
+    m.set_wall(MapPos::new(3, 2));
     m.set_wall(MapPos::new(3, 3));
     m.set_wall(MapPos::new(4, 3));
-    m.print_map();
-    let vec = m.shortest_path(MapPos::new(0, 0), MapPos::new(4, 4));
-    println!("");
-    m.print_path(vec);
+    m.set_start(MapPos::new(0, 0));
+    m.set_finish(MapPos::new(4, 4));
+    println!("{:?}", m.shortest_path());
 
     // Build the window.
     let mut events_loop = glium::glutin::EventsLoop::new();
     let window = glium::glutin::WindowBuilder::new()
-        .with_title("Hello Conrod!")
-        .with_dimensions((WIDTH, HEIGHT).into());
+        .with_title("Поиск кратчайшего пути")
+        .with_dimensions((WIDTH as f64, HEIGHT as f64).into());
     let context = glium::glutin::ContextBuilder::new()
         .with_vsync(true)
         .with_multisampling(4);
@@ -157,19 +159,19 @@ fn main() {
         // Set the widgets.
         let ui = &mut ui.set_widgets();
 
-        let mut elements = widget::Matrix::new(5, 4)
+        let mut elements = widget::Matrix::new(COLS, ROWS)
             .middle_of(ui.window)
             .set(ids.matrix, ui);
 
         while let Some(elem) = elements.next(ui) {
-            let (r, c) = (elem.row, elem.col);
-            let n = c + r * c;
-            let luminance = n as f32 / (5 * 4) as f32;
-            let canvas = widget::Canvas::new().color(color::BLUE.with_luminance(luminance));
+            let c = match m[elem.row][elem.col] {
+                Cell::Passable => color::WHITE,
+                Cell::Impassable => color::DARK_GREY,
+                Cell::Start => color::GREEN,
+                Cell::Finish => color::RED,
+            };
+            let canvas = widget::Canvas::new().color(c);
             elem.set(canvas, ui);
-            /* for _click in elem.set(button, ui) {
-                println!("Hey! {:?}", (r, c));
-            } */
         }
 
         // Render the `Ui` and then display it on the screen.
