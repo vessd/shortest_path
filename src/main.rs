@@ -9,13 +9,16 @@ mod map;
 
 use conrod::backend::glium::glium::{self, Surface};
 use conrod::{color, widget, Colorable, Positionable, Widget};
+use glium::glutin::dpi::LogicalPosition;
+use glium::glutin::ElementState;
 use map::{Cell, Map, MapPos};
 
 const COLS: usize = 32;
 const ROWS: usize = 18;
+const CELL_SIZE: usize = 32;
 
-const WIDTH: usize = COLS * 32;
-const HEIGHT: usize = ROWS * 32;
+const WIDTH: usize = COLS * CELL_SIZE;
+const HEIGHT: usize = ROWS * CELL_SIZE;
 
 /// In most of the examples the `glutin` crate is used for providing the window context and
 /// events while the `glium` crate is used for displaying `conrod::render::Primitives` to the
@@ -78,18 +81,37 @@ impl EventLoop {
     }
 }
 
+struct Cursor {
+    position: LogicalPosition,
+    state: ElementState,
+    cell: Cell,
+}
+
+impl Cursor {
+    fn new() -> Self {
+        Cursor {
+            position: (0f64, 0f64).into(),
+            state: ElementState::Released,
+            cell: Cell::Passable,
+        }
+    }
+}
+
+impl From<LogicalPosition> for MapPos {
+    fn from(pos: LogicalPosition) -> Self {
+        let (mut x, mut y): (i32, i32) = pos.into();
+        if x < 0 {
+            x = 0;
+        }
+        if y < 0 {
+            y = 0;
+        }
+        MapPos::new(y as usize / CELL_SIZE, x as usize / CELL_SIZE)
+    }
+}
+
 fn main() {
     let mut m = Map::new(COLS, ROWS);
-    m.set_wall(MapPos::new(1, 2));
-    m.set_wall(MapPos::new(1, 3));
-    //m.set_wall(MapPos::new(2, 2));
-    m.set_wall(MapPos::new(3, 1));
-    m.set_wall(MapPos::new(3, 2));
-    m.set_wall(MapPos::new(3, 3));
-    m.set_wall(MapPos::new(4, 3));
-    m.set_start(MapPos::new(0, 0));
-    m.set_finish(MapPos::new(4, 4));
-    println!("{:?}", m.shortest_path());
 
     // Build the window.
     let mut events_loop = glium::glutin::EventsLoop::new();
@@ -118,8 +140,9 @@ fn main() {
     // Poll events from the window.
     let mut event_loop = EventLoop::new();
 
-    let mut pos = glium::glutin::dpi::LogicalPosition::new(0f64, 0f64);
+    let mut cur = Cursor::new();
     'main: loop {
+        //std::thread::sleep(std::time::Duration::from_millis(25));
         // Handle all events.
         for event in event_loop.next(&mut events_loop) {
             // Use the `winit` backend feature to convert the winit event to a conrod one.
@@ -141,14 +164,27 @@ fn main() {
                         ..
                     } => break 'main,
                     glium::glutin::WindowEvent::CursorMoved { position, .. } => {
-                        pos = position;
+                        cur.position = position;
+                        if cur.state == ElementState::Pressed {
+                            m.set_cell(cur.cell, cur.position.into())
+                        }
                     }
                     glium::glutin::WindowEvent::MouseInput {
-                        state: glium::glutin::ElementState::Pressed,
+                        state,
+                        button: glium::glutin::MouseButton::Left,
                         ..
                     } => {
-                        let (x, y): (i32, i32) = pos.into();
-                        println!("Pressed: x: {}, y: {}", x, y);
+                        if state == ElementState::Pressed {
+                            let pos = MapPos::from(cur.position);
+                            cur.cell = match m[pos.x][pos.y] {
+                                Cell::Passable => Cell::Impassable,
+                                Cell::Impassable => Cell::Passable,
+                                Cell::Start => Cell::Start,
+                                Cell::Finish => Cell::Finish,
+                            };
+                            m[pos.x][pos.y] = cur.cell;
+                        }
+                        cur.state = state;
                     }
                     _ => (),
                 },
@@ -183,4 +219,5 @@ fn main() {
             target.finish().unwrap();
         }
     }
+    println!("{:?}", m.shortest_path());
 }

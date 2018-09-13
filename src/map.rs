@@ -14,8 +14,8 @@ pub enum Cell {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MapPos {
-    x: usize,
-    y: usize,
+    pub x: usize,
+    pub y: usize,
 }
 
 impl Ord for MapPos {
@@ -133,24 +133,31 @@ impl Map {
         &mut self.data[x * self.cols + y]
     }
 
-    pub fn set_wall(&mut self, pos: MapPos) {
-        if self.start != pos && self.finish != pos {
-            self[pos.x][pos.y] = Cell::Impassable;
+    pub fn set_cell(&mut self, cell: Cell, pos: MapPos) {
+        if cell == Cell::Passable || self[pos.x][pos.y] == Cell::Passable {
+            match cell {
+                Cell::Passable => {
+                    if self[pos.x][pos.y] == Cell::Impassable {
+                        self[pos.x][pos.y] = Cell::Passable;
+                    }
+                }
+                Cell::Impassable => {
+                    self[pos.x][pos.y] = Cell::Impassable;
+                }
+                Cell::Start => {
+                    let start = self.start;
+                    self[start.x][start.y] = Cell::Passable;
+                    self[pos.x][pos.y] = Cell::Start;
+                    self.start = pos;
+                }
+                Cell::Finish => {
+                    let finish = self.finish;
+                    self[finish.x][finish.y] = Cell::Passable;
+                    self[pos.x][pos.y] = Cell::Finish;
+                    self.finish = pos;
+                }
+            }
         }
-    }
-
-    pub fn set_start(&mut self, pos: MapPos) {
-        let start = self.start;
-        self[start.x][start.y] = Cell::Passable;
-        self[pos.x][pos.y] = Cell::Start;
-        self.start = pos;
-    }
-
-    pub fn set_finish(&mut self, pos: MapPos) {
-        let finish = self.finish;
-        self[finish.x][finish.y] = Cell::Passable;
-        self[pos.x][pos.y] = Cell::Finish;
-        self.finish = pos;
     }
 
     //евклидово расстояние
