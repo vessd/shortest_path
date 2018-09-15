@@ -8,6 +8,8 @@ extern crate serde_derive;
 mod map;
 
 use conrod::backend::glium::glium::{self, Surface};
+use conrod::position::Point;
+use conrod::widget::envelope_editor::EnvelopePoint;
 use conrod::{color, widget, Colorable, Positionable, Widget};
 use glium::glutin::dpi::LogicalPosition;
 use glium::glutin::ElementState;
@@ -127,7 +129,7 @@ fn main() {
     let mut ui = conrod::UiBuilder::new([WIDTH as f64, HEIGHT as f64]).build();
 
     // Generate the widget identifiers.
-    widget_ids!(struct Ids { text, matrix });
+    widget_ids!(struct Ids { line, matrix });
     let ids = Ids::new(ui.widget_id_generator());
 
     // A type used for converting `conrod::render::Primitives` into `Command`s that can be used
@@ -192,6 +194,16 @@ fn main() {
             }
         }
 
+        let points: Vec<Point> = m
+            .shortest_path()
+            .into_iter()
+            .map(|pos| {
+                Point::new(
+                    (pos.y as f64 - COLS as f64 / 2f64 + 0.5f64) * 32f64,
+                    (ROWS as f64 / 2f64 - pos.x as f64 - 0.5f64) * 32f64,
+                )
+            }).collect();
+
         // Set the widgets.
         let ui = &mut ui.set_widgets();
 
@@ -210,6 +222,11 @@ fn main() {
             elem.set(canvas, ui);
         }
 
+        widget::primitive::point_path::PointPath::abs(points)
+            .color(color::YELLOW)
+            .xy_relative_to(ui.window, Point::new(0f64, 0f64))
+            .set(ids.line, ui);
+
         // Render the `Ui` and then display it on the screen.
         if let Some(primitives) = ui.draw_if_changed() {
             renderer.fill(&display, primitives, &image_map);
@@ -219,5 +236,4 @@ fn main() {
             target.finish().unwrap();
         }
     }
-    println!("{:?}", m.shortest_path());
 }
