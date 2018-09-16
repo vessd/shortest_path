@@ -5,6 +5,7 @@ authors = ["Sergey Veselkov <veselkovsd@yandex.ru>"]
 
 [dependencies]
 conrod = { version = "0.61.1", features = ["glium", "winit"] }
-serde = "1.0.78"
-serde_derive = "1.0.78"
+serde = "1.0.79"
+serde_derive = "1.0.79"
 bincode = "1.0.1"
+failure = "0.1.2"

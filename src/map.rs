@@ -93,7 +93,7 @@ impl IndexMut<usize> for Map {
 }
 
 impl Map {
-    pub fn new(cols: usize, rows: usize) -> Self {
+    pub fn new(rows: usize, cols: usize) -> Self {
         //Увеличиваем рамер карты, для того чтобы сделать стену по периметру,
         //это позволит не проверять границы при поиске соседей.
         if cols < 2 && rows < 2 {
@@ -133,6 +133,14 @@ impl Map {
         &mut self.data[x * self.cols + y]
     }
 
+    pub fn rows(&self) -> usize {
+        self.data.len() / self.cols - 2
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols - 2
+    }
+
     pub fn set_cell(&mut self, cell: Cell, pos: MapPos) {
         if cell == Cell::Passable || self[pos.x][pos.y] == Cell::Passable {
             match cell {
@@ -166,16 +174,20 @@ impl Map {
     }
 
     fn reconstruct_path(&self, map: HashMap<MapPos, PosInfo>) -> Vec<MapPos> {
-        let mut vec = Vec::with_capacity(map[&self.finish].cost as usize);
-        let mut current = self.finish;
-        while let Some(info) = map.get(&current) {
-            vec.push(current);
-            if current == info.parent {
-                break;
+        if let Some(info) = map.get(&self.finish) {
+            let mut vec = Vec::with_capacity(info.cost as usize);
+            let mut current = self.finish;
+            while let Some(info) = map.get(&current) {
+                vec.push(current);
+                if current == info.parent {
+                    break;
+                }
+                current = info.parent;
             }
-            current = info.parent;
+            vec
+        } else {
+            Vec::new()
         }
-        vec
     }
 
     fn neighbors(&self, pos: MapPos) -> IntoIter<MapPos> {
