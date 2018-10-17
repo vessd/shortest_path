@@ -2,9 +2,10 @@ use conrod;
 use conrod::glium::glutin::dpi::LogicalPosition;
 use conrod::glium::glutin::ElementState;
 use conrod::glium::{self, Surface};
-use conrod::position::Point;
+use conrod::position::{Dimensions, Point};
 use conrod::widget::envelope_editor::EnvelopePoint;
 use conrod::{color, widget, Colorable, Positionable, Widget};
+use conrod::{Labelable, Sizeable};
 use map::{Cell, Map, MapPos};
 use std;
 
@@ -79,6 +80,20 @@ impl Cursor {
             cell: Cell::Passable,
         }
     }
+
+    fn get_map_pos(&self, map: &Map, dimensions: Dimensions) -> MapPos {
+        let x = match self.position.y.round() {
+            x if x < 0f64 => 0,
+            x if x >= dimensions[1] => map.rows() - 1,
+            x => (x / dimensions[1] * map.rows() as f64) as usize,
+        };
+        let y = match self.position.x.round() {
+            y if y < 0f64 => 0,
+            y if y >= dimensions[0] => map.cols() - 1,
+            y => (y / dimensions[0] * map.cols() as f64) as usize,
+        };
+        MapPos::new(x, y)
+    }
 }
 
 pub struct GUI {
@@ -91,8 +106,8 @@ impl GUI {
     }
 
     pub fn exec(&mut self) -> Result<()> {
-        let height = (self.map.rows() * 32) as f64;
-        let width = (self.map.cols() * 32) as f64;
+        let height = 600f64;
+        let width = 1024f64;
 
         // Build the window.
         let mut events_loop = glium::glutin::EventsLoop::new();
@@ -108,7 +123,7 @@ impl GUI {
         let mut ui = conrod::UiBuilder::new([width, height]).build();
 
         // Generate the widget identifiers.
-        widget_ids!(struct Ids { line, matrix });
+        widget_ids!(struct Ids { canvas, line, matrix_canvas, matrix, button_start });
         let ids = Ids::new(ui.widget_id_generator());
 
         // A type used for converting `conrod::render::Primitives` into `Command`s that can be used
@@ -148,11 +163,7 @@ impl GUI {
                             cur.position = position;
                             if cur.state == ElementState::Pressed {
                                 if let Some(matrix_dimensions) = ui.wh_of(ids.matrix) {
-                                    let cell_w = matrix_dimensions[0] / self.map.cols() as f64;
-                                    let cell_h = matrix_dimensions[1] / self.map.rows() as f64;
-                                    let x = cur.position.y.round() / cell_h;
-                                    let y = cur.position.x.round() / cell_w;
-                                    let pos = MapPos::new(x as usize, y as usize);
+                                    let pos = cur.get_map_pos(&self.map, matrix_dimensions);
                                     self.map.set_cell(cur.cell, pos);
                                 }
                             }
@@ -164,11 +175,7 @@ impl GUI {
                         } => {
                             if state == ElementState::Pressed {
                                 if let Some(matrix_dimensions) = ui.wh_of(ids.matrix) {
-                                    let cell_w = matrix_dimensions[0] / self.map.cols() as f64;
-                                    let cell_h = matrix_dimensions[1] / self.map.rows() as f64;
-                                    let x = cur.position.y.round() / cell_h;
-                                    let y = cur.position.x.round() / cell_w;
-                                    let pos = MapPos::new(x as usize, y as usize);
+                                    let pos = cur.get_map_pos(&self.map, matrix_dimensions);
                                     cur.cell = match self.map[pos.x][pos.y] {
                                         Cell::Passable => Cell::Impassable,
                                         Cell::Impassable => Cell::Passable,
@@ -189,8 +196,15 @@ impl GUI {
             // Set the widgets.
             let ui = &mut ui.set_widgets();
 
+            widget::Canvas::new().set(ids.canvas, ui);
+
+            widget::Canvas::new()
+                .mid_top_of(ids.canvas)
+                .h(ui.h_of(ids.canvas).unwrap_or(600f64) - 24f64)
+                .set(ids.matrix_canvas, ui);
+
             let mut elements = widget::Matrix::new(self.map.cols(), self.map.rows())
-                .middle_of(ui.window)
+                .middle_of(ids.matrix_canvas)
                 .set(ids.matrix, ui);
 
             while let Some(elem) = elements.next(ui) {
@@ -204,7 +218,7 @@ impl GUI {
                 elem.set(canvas, ui);
             }
 
-            if let Some(matrix_dimensions) = ui.wh_of(ids.matrix) {
+            if let Some(matrix_dimensions) = ui.wh_of(ids.matrix_canvas) {
                 let cell_w = matrix_dimensions[0] / self.map.cols() as f64;
                 let cell_h = matrix_dimensions[1] / self.map.rows() as f64;
                 let points: Vec<Point> = self
@@ -217,11 +231,22 @@ impl GUI {
                             matrix_dimensions[1] / 2f64 - cell_h * (pos.x as f64 + 0.5f64),
                         )
                     }).collect();
-                widget::primitive::point_path::PointPath::abs(points)
+                println!("{:#?}", ui.xy_of(ids.matrix_canvas));
+                widget::primitive::point_path::PointPath::new(points)
+                    .w_h(100f64, 100f64)
+                    //.xy(ui.xy_of(ids.matrix).unwrap())
+                    //.top_left_of(ids.matrix_canvas)
                     .color(color::YELLOW)
-                    .top_left_of(ui.window)
                     .set(ids.line, ui);
             }
+
+            for _press in widget::Button::new()
+                .label("PRESS ME")
+                .down_from(ids.matrix_canvas, 0.0)
+                .align_middle_x_of(ids.canvas)
+                .w_h(30f64, 30f64)
+                .set(ids.button_start, ui)
+            {}
 
             // Render the `Ui` and then display it on the screen.
             if let Some(primitives) = ui.draw_if_changed() {
