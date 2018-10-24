@@ -1,5 +1,5 @@
 extern crate bincode;
-extern crate cairo;
+//extern crate cairo;
 extern crate failure;
 extern crate gdk;
 extern crate gtk;

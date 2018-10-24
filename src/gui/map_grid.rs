@@ -1,11 +1,10 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use cairo::Context;
 use gdk::EventMask;
 use gtk::WidgetExt;
 use gtk::{DrawingArea, Inhibit};
-use relm::{Relm, Update, Widget};
+use relm::{DrawHandler, Widget};
+use relm_attributes::widget;
+
+use self::Msg::UpdateDrawBuffer;
 
 #[derive(Debug, Clone)]
 struct Color {
@@ -27,21 +26,29 @@ struct PointPath {
     width: f64,
 }
 
-#[derive(Debug)]
 pub struct Model {
-    state: Rc<RefCell<State>>,
-}
-
-#[derive(Debug)]
-pub struct State {
+    draw_handler: DrawHandler<DrawingArea>,
     cell: Vec<Color>,
     width: usize,
     path: Option<PointPath>,
 }
 
-impl State {
-    fn new(size: (usize, usize)) -> Self {
-        State {
+#[derive(Msg)]
+pub enum Msg {
+    UpdateDrawBuffer,
+}
+
+#[widget]
+impl Widget for MapGrid {
+    fn init_view(&mut self) {
+        self.model.draw_handler.init(&self.drawing_area);
+        self.drawing_area
+            .add_events(EventMask::POINTER_MOTION_MASK.bits() as i32);
+    }
+
+    fn model(size: (usize, usize)) -> Model {
+        Model {
+            draw_handler: DrawHandler::new().expect("draw handler"),
             cell: vec![
                 Color {
                     red: 1f64,
@@ -50,74 +57,49 @@ impl State {
                 };
                 size.0 * size.1
             ],
-            width: size.1,
+            width: size.0,
             path: None,
         }
     }
 
-    fn draw(&self, drawing_area: &DrawingArea, cr: &Context) {
-        cr.rectangle(0.0, 0.0, 8.0, 8.0);
-        cr.set_source_rgb(0.55, 0.64, 0.68); // dark
-        cr.fill();
-    }
-}
+    fn update(&mut self, event: Msg) {
+        match event {
+            UpdateDrawBuffer => {
+                let allocation = self.drawing_area.get_allocation();
+                let context = self.model.draw_handler.get_context();
 
-#[derive(Msg)]
-pub enum Msg {
-    Quit,
-}
-
-#[derive(Debug)]
-pub struct MapGrid {
-    drawing_area: DrawingArea,
-    model: Model,
-}
-
-impl Update for MapGrid {
-    type Model = Model;
-    type ModelParam = (usize, usize);
-    type Msg = Msg;
-
-    fn model(_: &Relm<Self>, size: (usize, usize)) -> Model {
-        Model {
-            state: Rc::new(RefCell::new(State::new(size))),
-        }
-    }
-
-    fn update(&mut self, event: Msg) {}
-}
-
-impl Widget for MapGrid {
-    type Root = DrawingArea;
-
-    fn root(&self) -> Self::Root {
-        self.drawing_area.clone()
-    }
-
-    fn view(relm: &Relm<Self>, model: Self::Model) -> Self {
-        let drawing_area = DrawingArea::new();
-        drawing_area.add_events(
-            (EventMask::BUTTON_PRESS_MASK
-                | EventMask::BUTTON_RELEASE_MASK
-                | EventMask::POINTER_MOTION_MASK)
-                .bits() as i32,
-        );
-        {
-            let weak_state = Rc::downgrade(&model.state);
-            drawing_area.connect_draw(move |widget, cr| {
-                if let Some(state) = weak_state.upgrade() {
-                    let state = state.borrow();
-                    state.draw(widget, cr);
+                context.rectangle(0.0, 0.0, allocation.width as f64, allocation.height as f64);
+                context.set_source_rgb(0.0, 0.0, 0.0);
+                context.fill();
+                let cell_width = allocation.width as f64 / self.model.width as f64;
+                let cell_height =
+                    allocation.height as f64 / (self.model.cell.len() / self.model.width) as f64;
+                let mut cell_x = 0f64;
+                let mut cell_y = 0f64;
+                let border = 1f64;
+                for (i, c) in self.model.cell.iter().enumerate() {
+                    if i % self.model.width == 0 && i != 0 {
+                        cell_y += cell_height;
+                        cell_x = 0f64;
+                    }
+                    context.rectangle(
+                        cell_x + border,
+                        cell_y + border,
+                        cell_width - 2f64 * border,
+                        cell_height - 2f64 * border,
+                    );
+                    context.set_source_rgb(c.red, c.green, c.blue);
+                    context.fill();
+                    cell_x += cell_width;
                 }
-                Inhibit(false)
-            });
+            }
         }
+    }
 
-        drawing_area.show();
-
-        MapGrid {
-            drawing_area,
-            model,
+    view! {
+        #[name="drawing_area"]
+        gtk::DrawingArea {
+            draw(_, _) => (UpdateDrawBuffer, Inhibit(false)),
         }
     }
 }

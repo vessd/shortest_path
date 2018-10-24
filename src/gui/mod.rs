@@ -1,7 +1,7 @@
 mod map_grid;
 
 use gtk::Inhibit;
-use gtk::{ButtonExt, GridExt, WidgetExt};
+use gtk::{ButtonExt, GridExt, GtkWindowExt, WidgetExt};
 use relm::Widget;
 use relm_attributes::widget;
 
@@ -33,6 +33,7 @@ impl Widget for Win {
 
     view! {
         gtk::Window {
+            title: "Поиск кратчайшего пути",
             gtk::Grid {
                 column_homogeneous: true,
                 row_homogeneous: true,
@@ -49,7 +50,7 @@ impl Widget for Win {
                     cell: {
                         left_attach: 0,
                         top_attach: 18,
-                        width: 3,
+                        width: 4,
                         height: 1,
                     },
                 },
@@ -58,7 +59,7 @@ impl Widget for Win {
                     cell: {
                         left_attach: 0,
                         top_attach: 19,
-                        width: 3,
+                        width: 4,
                         height: 1,
                     },
                 },
