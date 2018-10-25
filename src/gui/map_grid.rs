@@ -5,8 +5,6 @@ use map::{Cell, Map, MapPos};
 use relm::{DrawHandler, Widget};
 use relm_attributes::widget;
 
-use self::Msg::{ButtonPress, ButtonRelease, MoveCursor, UpdateDrawBuffer};
-
 #[derive(Debug, Clone)]
 struct Color {
     red: f64,
@@ -54,6 +52,22 @@ impl Color {
             blue: 0f64,
         }
     }
+
+    fn pale_blue() -> Self {
+        Self {
+            red: 0.68359375f64,
+            green: 0.9296875f64,
+            blue: 0.9296875f64,
+        }
+    }
+
+    fn pale_green() -> Self {
+        Self {
+            red: 0.59375f64,
+            green: 0.98046875f64,
+            blue: 0.59375f64,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -81,6 +95,8 @@ pub enum Msg {
     MoveCursor((f64, f64)),
     ButtonPress,
     ButtonRelease,
+    FindPath,
+    ClearPath,
 }
 
 impl MapGrid {
@@ -127,7 +143,7 @@ impl Widget for MapGrid {
 
     fn update(&mut self, event: Msg) {
         match event {
-            UpdateDrawBuffer => {
+            Msg::UpdateDrawBuffer => {
                 let allocation = self.drawing_area.get_allocation();
                 let context = self.model.draw_handler.get_context();
                 context.rectangle(
@@ -150,6 +166,8 @@ impl Widget for MapGrid {
                             Cell::Impassable => Color::grey(),
                             Cell::Start => Color::green(),
                             Cell::Finish => Color::red(),
+                            Cell::Visited => Color::pale_blue(),
+                            Cell::InQueue => Color::pale_green(),
                         };
                         context.set_source_rgb(color.red, color.green, color.blue);
                         context.rectangle(
@@ -168,48 +186,60 @@ impl Widget for MapGrid {
                         context.set_line_width(3f64);
                         context.set_source_rgb(path.color.red, path.color.green, path.color.blue);
                         context.move_to(
-                            (path.coordinates[0].x as f64 + 0.5f64) * cell_width,
-                            (path.coordinates[0].y as f64 + 0.5f64) * cell_height,
+                            (path.coordinates[0].y as f64 + 0.5f64) * cell_width,
+                            (path.coordinates[0].x as f64 + 0.5f64) * cell_height,
                         );
                         for c in path.coordinates.iter().skip(1) {
                             context.line_to(
-                                (c.x as f64 + 0.5f64) * cell_width,
-                                (c.y as f64 + 0.5f64) * cell_height,
+                                (c.y as f64 + 0.5f64) * cell_width,
+                                (c.x as f64 + 0.5f64) * cell_height,
                             );
                         }
                         context.stroke();
                     }
                 }
             }
-            MoveCursor(pos) => {
+            Msg::MoveCursor(pos) => {
                 self.model.cursor.position = pos;
                 if self.model.cursor.button_pressed {
                     let pos = self.get_cursor_pos();
                     self.model.map.set_cell(self.model.cursor.cell, pos);
                 }
             }
-            ButtonPress => {
+            Msg::ButtonPress => {
                 self.model.cursor.button_pressed = true;
                 let pos = self.get_cursor_pos();
                 self.model.cursor.cell = match self.model.map[pos.x][pos.y] {
                     Cell::Passable => Cell::Impassable,
                     Cell::Impassable => Cell::Passable,
-                    Cell::Start => Cell::Start,
-                    Cell::Finish => Cell::Finish,
+                    c => c,
                 };
                 self.model.map[pos.x][pos.y] = self.model.cursor.cell;
             }
-            ButtonRelease => self.model.cursor.button_pressed = false,
+            Msg::ButtonRelease => self.model.cursor.button_pressed = false,
+            Msg::FindPath => {
+                self.drawing_area.set_sensitive(false);
+                let vec = self.model.map.shortest_path();
+                self.model.path = Some(PointPath {
+                    coordinates: vec,
+                    color: Color::yellow(),
+                });
+            }
+            Msg::ClearPath => {
+                self.drawing_area.set_sensitive(true);
+                self.model.map.clear_path();
+                self.model.path = None;
+            }
         }
     }
 
     view! {
         #[name="drawing_area"]
         gtk::DrawingArea {
-            draw(_, _) => (UpdateDrawBuffer, Inhibit(false)),
-            motion_notify_event(_, event) => (MoveCursor(event.get_position()), Inhibit(false)),
-            button_press_event(_, _) => (ButtonPress, Inhibit(false)),
-            button_release_event(_, _) => (ButtonRelease, Inhibit(false)),
+            draw(_, _) => (Msg::UpdateDrawBuffer, Inhibit(false)),
+            motion_notify_event(_, event) => (Msg::MoveCursor(event.get_position()), Inhibit(false)),
+            button_press_event(_, _) => (Msg::ButtonPress, Inhibit(false)),
+            button_release_event(_, _) => (Msg::ButtonRelease, Inhibit(false)),
         }
     }
 }

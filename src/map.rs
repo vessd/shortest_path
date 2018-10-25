@@ -10,6 +10,8 @@ pub enum Cell {
     Impassable,
     Start,
     Finish,
+    Visited,
+    InQueue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -142,30 +144,37 @@ impl Map {
     }
 
     pub fn set_cell(&mut self, cell: Cell, pos: MapPos) {
-        if cell == Cell::Passable || self[pos.x][pos.y] == Cell::Passable {
-            match cell {
-                Cell::Passable => {
-                    if self[pos.x][pos.y] == Cell::Impassable {
-                        self[pos.x][pos.y] = Cell::Passable;
+        if self[pos.x][pos.y] != Cell::Start && self[pos.x][pos.y] != Cell::Finish {
+            if cell == Cell::Passable || self[pos.x][pos.y] != Cell::Impassable {
+                match cell {
+                    Cell::Passable => {
+                        if self[pos.x][pos.y] == Cell::Impassable {
+                            self[pos.x][pos.y] = Cell::Passable;
+                        }
                     }
-                }
-                Cell::Impassable => {
-                    self[pos.x][pos.y] = Cell::Impassable;
-                }
-                Cell::Start => {
-                    let start = self.start;
-                    self[start.x][start.y] = Cell::Passable;
-                    self[pos.x][pos.y] = Cell::Start;
-                    self.start = pos;
-                }
-                Cell::Finish => {
-                    let finish = self.finish;
-                    self[finish.x][finish.y] = Cell::Passable;
-                    self[pos.x][pos.y] = Cell::Finish;
-                    self.finish = pos;
+                    Cell::Start => {
+                        let start = self.start;
+                        self[start.x][start.y] = Cell::Passable;
+                        self[pos.x][pos.y] = Cell::Start;
+                        self.start = pos;
+                    }
+                    Cell::Finish => {
+                        let finish = self.finish;
+                        self[finish.x][finish.y] = Cell::Passable;
+                        self[pos.x][pos.y] = Cell::Finish;
+                        self.finish = pos;
+                    }
+                    c => self[pos.x][pos.y] = c,
                 }
             }
         }
+    }
+
+    pub fn clear_path(&mut self) {
+        self.data
+            .iter_mut()
+            .filter(|c| **c == Cell::Visited || **c == Cell::InQueue)
+            .for_each(|c| *c = Cell::Passable)
     }
 
     //евклидово расстояние
@@ -232,7 +241,7 @@ impl Map {
         vec.into_iter()
     }
 
-    pub fn shortest_path(&self) -> Vec<MapPos> {
+    pub fn shortest_path(&mut self) -> Vec<MapPos> {
         let mut heap = BinaryHeap::new();
         let mut map = HashMap::new();
         heap.push(PosState {
@@ -268,6 +277,8 @@ impl Map {
                         cost: new_cost,
                     },
                 );
+                self.set_cell(Cell::InQueue, pos);
+                self.set_cell(Cell::Visited, current.position);
             }
         }
         self.reconstruct_path(map)
