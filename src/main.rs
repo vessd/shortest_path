@@ -1,6 +1,6 @@
 extern crate bincode;
 //extern crate cairo;
-extern crate failure;
+//extern crate failure;
 extern crate gdk;
 extern crate gtk;
 #[macro_use]
@@ -18,5 +18,5 @@ mod gui;
 mod map;
 
 fn main() {
-    gui::Win::run(()).expect("Win::run failed");
+    gui::Win::run((18, 32)).expect("Win::run failed");
 }
