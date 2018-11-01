@@ -1,6 +1,8 @@
+use bincode::{deserialize, serialize};
 use gdk::EventMask;
 use gtk::{
-    ButtonExt, ComboBoxExt, ComboBoxTextExt, GridExt, GtkWindowExt, NativeDialogExt, WidgetExt,
+    ButtonExt, ComboBoxExt, ComboBoxTextExt, FileChooserExt, GridExt, GtkWindowExt,
+    NativeDialogExt, WidgetExt,
 };
 use gtk::{DrawingArea, Inhibit};
 use map::{
@@ -8,6 +10,7 @@ use map::{
 };
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
+use std::fs;
 
 #[derive(Debug, Clone)]
 struct Color {
@@ -99,6 +102,7 @@ pub enum Msg {
     Next,
     AlgorithmChange,
     Save,
+    Open,
     Quit,
 }
 
@@ -288,10 +292,29 @@ impl Widget for Win {
                     Some("Сохранить карту"),
                     Some(&self.window),
                     gtk::FileChooserAction::Save,
-                    None,
-                    None,
+                    Some("Сохранить"),
+                    Some("Отменить"),
                 );
-                file_chooser.run();
+                if file_chooser.run() == gtk::ResponseType::Accept.into() {
+                    let vec = serialize(self.model.search_algorithm.get_map()).unwrap();
+                    fs::write(file_chooser.get_filename().unwrap(), vec);
+                }
+            }
+            Msg::Open => {
+                let file_chooser = gtk::FileChooserNative::new(
+                    Some("Загрузить карту"),
+                    Some(&self.window),
+                    gtk::FileChooserAction::Open,
+                    Some("Открыть"),
+                    Some("Отменить"),
+                );
+                if file_chooser.run() == gtk::ResponseType::Accept.into() {
+                    let vec = fs::read(file_chooser.get_filename().unwrap()).unwrap();
+                    self.model
+                        .search_algorithm
+                        .get_mut_map()
+                        .replace_from(&deserialize(&vec).unwrap());
+                }
             }
             Msg::Quit => gtk::main_quit(),
         }
@@ -337,6 +360,7 @@ impl Widget for Win {
                         width: 4,
                         height: 1,
                     },
+                    clicked => Msg::Open,
                 },
                 #[name="combo_box"]
                 gtk::ComboBoxText {

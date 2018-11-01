@@ -217,6 +217,14 @@ impl Map {
         }
         vec.into_iter()
     }
+
+    pub fn replace_from(&mut self, map: &Map) {
+        self.cols = map.cols;
+        self.data.clear();
+        self.data.extend_from_slice(&map.data);
+        self.start = map.start;
+        self.finish = map.finish;
+    }
 }
 
 #[derive(PartialEq)]
