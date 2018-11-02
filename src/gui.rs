@@ -2,12 +2,10 @@ use bincode::{deserialize, serialize};
 use gdk::EventMask;
 use gtk::{
     ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt, FileChooserExt, GridExt, GtkWindowExt,
-    NativeDialogExt, WidgetExt,
+    LabelExt, NativeDialogExt, WidgetExt,
 };
 use gtk::{DrawingArea, Inhibit};
-use map::{
-    AStar, BreadthFirstSearch, Cell, DijkstrasAlgorithm, Map, MapPos, SearchStatus, ShortestPath,
-};
+use map::{Algorithm, Cell, Map, MapPos, SearchStatus, ShortestPath};
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
 use std::fs;
@@ -119,7 +117,7 @@ struct Cursor {
 
 pub struct Model {
     draw_handler: DrawHandler<DrawingArea>,
-    search_algorithm: Box<ShortestPath>,
+    search: ShortestPath,
     status: SearchStatus,
     path: Option<Vec<MapPos>>,
     cursor: Cursor,
@@ -145,23 +143,13 @@ impl Win {
         let allocation = self.drawing_area.get_allocation();
         let x = match self.model.cursor.position.1.round() {
             x if x < 0f64 => 0,
-            x if x >= f64::from(allocation.height) => {
-                self.model.search_algorithm.get_map().rows() - 1
-            }
-            x => {
-                (x / f64::from(allocation.height)
-                    * self.model.search_algorithm.get_map().rows() as f64) as usize
-            }
+            x if x >= f64::from(allocation.height) => self.model.search.map.rows() - 1,
+            x => (x / f64::from(allocation.height) * self.model.search.map.rows() as f64) as usize,
         };
         let y = match self.model.cursor.position.0.round() {
             y if y < 0f64 => 0,
-            y if y >= f64::from(allocation.width) => {
-                self.model.search_algorithm.get_map().cols() - 1
-            }
-            y => {
-                (y / f64::from(allocation.width)
-                    * self.model.search_algorithm.get_map().cols() as f64) as usize
-            }
+            y if y >= f64::from(allocation.width) => self.model.search.map.cols() - 1,
+            y => (y / f64::from(allocation.width) * self.model.search.map.cols() as f64) as usize,
         };
         MapPos::new(x, y)
     }
@@ -188,7 +176,7 @@ impl Widget for Win {
     fn model(size: (usize, usize)) -> Model {
         Model {
             draw_handler: DrawHandler::new().expect("draw handler"),
-            search_algorithm: Box::new(AStar::new(Map::new(size.0, size.1))),
+            search: ShortestPath::new(Map::new(size.0, size.1), Algorithm::AStar),
             status: SearchStatus::NotFound,
             path: None,
             cursor: Cursor {
@@ -216,16 +204,15 @@ impl Widget for Win {
                 );
                 context.set_source_rgb(0.0, 0.0, 0.0);
                 context.fill();
-                let cell_width = f64::from(allocation.width)
-                    / self.model.search_algorithm.get_map().cols() as f64;
-                let cell_height = f64::from(allocation.height)
-                    / self.model.search_algorithm.get_map().rows() as f64;
+                let cell_width = f64::from(allocation.width) / self.model.search.map.cols() as f64;
+                let cell_height =
+                    f64::from(allocation.height) / self.model.search.map.rows() as f64;
 
                 // draw grid
                 let border = 1f64;
-                for i in 0..self.model.search_algorithm.get_map().rows() {
-                    for j in 0..self.model.search_algorithm.get_map().cols() {
-                        let color = match self.model.search_algorithm.get_map()[i][j] {
+                for i in 0..self.model.search.map.rows() {
+                    for j in 0..self.model.search.map.cols() {
+                        let color = match self.model.search.map[i][j] {
                             Cell::Passable => Color::white(),
                             Cell::Impassable => Color::grey(),
                             Cell::Start => Color::green(),
@@ -268,29 +255,28 @@ impl Widget for Win {
                 self.model.cursor.position = pos;
                 if self.model.cursor.button_pressed {
                     let pos = self.get_cursor_pos();
-                    self.model
-                        .search_algorithm
-                        .get_mut_map()
-                        .set_cell(self.model.cursor.cell, pos);
+                    self.model.search.map.set_cell(self.model.cursor.cell, pos);
                 }
             }
             Msg::ButtonPress => {
                 self.model.cursor.button_pressed = true;
                 let pos = self.get_cursor_pos();
-                self.model.cursor.cell = match self.model.search_algorithm.get_map()[pos.x][pos.y] {
+                self.model.cursor.cell = match self.model.search.map[pos.x][pos.y] {
                     Cell::Passable => Cell::Impassable,
                     Cell::Impassable => Cell::Passable,
                     c => c,
                 };
-                self.model.search_algorithm.get_mut_map()[pos.x][pos.y] = self.model.cursor.cell;
+                self.model.search.map[pos.x][pos.y] = self.model.cursor.cell;
             }
             Msg::ButtonRelease => self.model.cursor.button_pressed = false,
             Msg::FindPath => {
-                self.model.search_algorithm.init();
+                self.model.search.init();
                 self.search_path_button.hide();
                 self.clear_path_button.show();
                 self.drawing_area.set_sensitive(false);
                 self.combo_box.set_sensitive(false);
+                self.save_button.set_sensitive(false);
+                self.open_button.set_sensitive(false);
                 self.model.status = SearchStatus::Searching;
             }
             Msg::ClearPath => {
@@ -298,27 +284,32 @@ impl Widget for Win {
                 self.clear_path_button.hide();
                 self.drawing_area.set_sensitive(true);
                 self.combo_box.set_sensitive(true);
+                self.save_button.set_sensitive(true);
+                self.open_button.set_sensitive(true);
                 self.model.path = None;
-                self.model.search_algorithm.init();
+                self.model.search.init();
                 self.model.status = SearchStatus::NotFound;
+                self.label.set_text("Длина пути:");
             }
             Msg::Next => {
                 if self.model.status == SearchStatus::Searching {
-                    match self.model.search_algorithm.next() {
-                        SearchStatus::Found => {
-                            self.model.status = SearchStatus::Found;
-                            self.model.path = self.model.search_algorithm.path();
+                    match self.model.search.next() {
+                        SearchStatus::Found(len) => {
+                            self.model.status = SearchStatus::Found(len);
+                            self.model.path = self.model.search.path();
+                            self.label
+                                .set_text(format!("Длина пути: {:.2}", len).as_str());
                         }
                         status => self.model.status = status,
                     }
                 }
             }
             Msg::AlgorithmChange => {
-                let map = self.model.search_algorithm.clone_map();
+                let map = self.model.search.map.clone();
                 match self.combo_box.get_active() {
-                    0 => self.model.search_algorithm = Box::new(BreadthFirstSearch::new(map)),
-                    1 => self.model.search_algorithm = Box::new(DijkstrasAlgorithm::new(map)),
-                    _ => self.model.search_algorithm = Box::new(AStar::new(map)),
+                    0 => self.model.search = ShortestPath::new(map, Algorithm::BreadthFirstSearch),
+                    1 => self.model.search = ShortestPath::new(map, Algorithm::Dijkstra),
+                    _ => self.model.search = ShortestPath::new(map, Algorithm::AStar),
                 }
             }
             Msg::Save => {
@@ -330,7 +321,7 @@ impl Widget for Win {
                     Some("Отменить"),
                 );
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
-                    let vec = try_message!(serialize(self.model.search_algorithm.get_map()));
+                    let vec = try_message!(serialize(&self.model.search.map));
                     try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
                     success_message!("Карта сохранена");
                 }
@@ -346,8 +337,8 @@ impl Widget for Win {
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
                     let vec = try_message!(fs::read(file_chooser.get_filename().unwrap()));
                     self.model
-                        .search_algorithm
-                        .get_mut_map()
+                        .search
+                        .map
                         .replace_from(&try_message!(deserialize(&vec)));
                     success_message!("Карта загружена");
                 }
@@ -378,6 +369,7 @@ impl Widget for Win {
                     button_press_event(_, _) => (Msg::ButtonPress, Inhibit(false)),
                     button_release_event(_, _) => (Msg::ButtonRelease, Inhibit(false)),
                 },
+                #[name="save_button"]
                 gtk::Button {
                     label: "Сохранить карту",
                     cell: {
@@ -388,6 +380,7 @@ impl Widget for Win {
                     },
                     clicked => Msg::Save,
                 },
+                #[name="open_button"]
                 gtk::Button {
                     label: "Загрузить карту",
                     cell: {
@@ -430,6 +423,17 @@ impl Widget for Win {
                     },
                     visible: false,
                     clicked => Msg::ClearPath,
+                },
+                #[name="label"]
+                gtk::Label {
+                    text: "Длина пути:",
+                    xalign: 0f32,
+                    cell: {
+                        left_attach: 23,
+                        top_attach: 19,
+                        width: 9,
+                        height: 1,
+                    },
                 }
             },
             delete_event(_, _) => (Msg::Quit, Inhibit(false)),

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap};
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::vec::IntoIter;
@@ -20,18 +20,6 @@ pub struct MapPos {
     pub y: usize,
 }
 
-impl Ord for MapPos {
-    fn cmp(&self, other: &MapPos) -> Ordering {
-        self.x.cmp(&other.x).then_with(|| self.y.cmp(&other.y))
-    }
-}
-
-impl PartialOrd for MapPos {
-    fn partial_cmp(&self, other: &MapPos) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl MapPos {
     pub fn new(x: usize, y: usize) -> Self {
         Self { x, y }
@@ -40,7 +28,7 @@ impl MapPos {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PosState {
-    position: MapPos,
+    pos: MapPos,
     cost: f64,
 }
 
@@ -51,8 +39,7 @@ impl Ord for PosState {
         other
             .cost
             .partial_cmp(&self.cost)
-            .unwrap()
-            .then_with(|| self.position.cmp(&other.position))
+            .unwrap_or(Ordering::Equal)
     }
 }
 
@@ -138,28 +125,36 @@ impl Map {
     }
 
     pub fn set_cell(&mut self, cell: Cell, pos: MapPos) {
-        if self[pos.x][pos.y] != Cell::Start && self[pos.x][pos.y] != Cell::Finish {
-            if cell == Cell::Passable || self[pos.x][pos.y] != Cell::Impassable {
-                match cell {
-                    Cell::Passable => {
-                        if self[pos.x][pos.y] == Cell::Impassable {
-                            self[pos.x][pos.y] = Cell::Passable;
-                        }
-                    }
-                    Cell::Start => {
-                        let start = self.start;
-                        self[start.x][start.y] = Cell::Passable;
-                        self[pos.x][pos.y] = Cell::Start;
-                        self.start = pos;
-                    }
-                    Cell::Finish => {
-                        let finish = self.finish;
-                        self[finish.x][finish.y] = Cell::Passable;
-                        self[pos.x][pos.y] = Cell::Finish;
-                        self.finish = pos;
-                    }
-                    c => self[pos.x][pos.y] = c,
+        if self[pos.x][pos.y] == Cell::Passable {
+            match cell {
+                Cell::Passable | Cell::Visited => (),
+                Cell::Impassable | Cell::InQueue => self[pos.x][pos.y] = cell,
+                Cell::Start => {
+                    let start = self.start;
+                    self[start.x][start.y] = Cell::Passable;
+                    self[pos.x][pos.y] = Cell::Start;
+                    self.start = pos;
                 }
+                Cell::Finish => {
+                    let finish = self.finish;
+                    self[finish.x][finish.y] = Cell::Passable;
+                    self[pos.x][pos.y] = Cell::Finish;
+                    self.finish = pos;
+                }
+            }
+        } else {
+            match cell {
+                Cell::Passable => {
+                    if self[pos.x][pos.y] == Cell::Impassable {
+                        self[pos.x][pos.y] = cell;
+                    }
+                }
+                Cell::Visited => {
+                    if self[pos.x][pos.y] == Cell::InQueue {
+                        self[pos.x][pos.y] = cell;
+                    }
+                }
+                _ => (),
             }
         }
     }
@@ -229,80 +224,80 @@ impl Map {
 
 #[derive(PartialEq)]
 pub enum SearchStatus {
-    Found,
+    Found(f64),
     NotFound,
     Searching,
 }
 
-pub trait ShortestPath {
-    fn new(map: Map) -> Self
-    where
-        Self: Sized;
-    fn next(&mut self) -> SearchStatus;
-    fn path(&self) -> Option<Vec<MapPos>>;
-    fn get_map(&self) -> &Map;
-    fn get_mut_map(&mut self) -> &mut Map;
-    fn clone_map(&mut self) -> Map;
-    fn init(&mut self);
+#[derive(Debug, PartialEq)]
+pub enum Algorithm {
+    BreadthFirstSearch,
+    Dijkstra,
+    AStar,
 }
 
-pub struct AStar {
-    map: Map,
+pub struct ShortestPath {
+    pub map: Map,
     queue: BinaryHeap<PosState>,
     visited: HashMap<MapPos, PosState>,
+    algorithm: Algorithm,
 }
-
-impl ShortestPath for AStar {
-    fn new(map: Map) -> Self {
+impl ShortestPath {
+    pub fn new(map: Map, algorithm: Algorithm) -> Self {
         let queue = BinaryHeap::new();
         let visited = HashMap::new();
         Self {
             map,
             queue,
             visited,
+            algorithm,
         }
     }
 
-    fn next(&mut self) -> SearchStatus {
+    pub fn next(&mut self) -> SearchStatus {
         if let Some(current) = self.queue.pop() {
-            if current.position == self.map.finish {
-                return SearchStatus::Found;
+            if current.pos == self.map.finish {
+                return SearchStatus::Found(self.visited[&current.pos].cost);
             }
-            for pos in self.map.neighbors(current.position) {
-                let new_cost =
-                    self.visited[&current.position].cost + Map::distance(current.position, pos);
+            for pos in self.map.neighbors(current.pos) {
+                let new_cost = self.visited[&current.pos].cost + Map::distance(current.pos, pos);
+
                 if let Some(info) = self.visited.get(&pos) {
-                    if new_cost >= info.cost {
+                    if self.algorithm == Algorithm::BreadthFirstSearch || new_cost >= info.cost {
                         continue;
                     }
                 }
-                self.queue.push(PosState {
-                    position: pos,
-                    cost: new_cost + Map::distance(pos, self.map.finish),
-                });
+
+                let cost = match self.algorithm {
+                    Algorithm::BreadthFirstSearch => current.cost + (self.queue.len() + 1) as f64,
+                    Algorithm::Dijkstra => new_cost,
+                    Algorithm::AStar => new_cost + Map::distance(pos, self.map.finish),
+                };
+
+                self.queue.push(PosState { pos, cost });
                 self.visited.insert(
                     pos,
                     PosState {
-                        position: current.position,
+                        pos: current.pos,
                         cost: new_cost,
                     },
                 );
                 self.map.set_cell(Cell::InQueue, pos);
             }
-            self.map.set_cell(Cell::Visited, current.position);
+            self.map.set_cell(Cell::Visited, current.pos);
             SearchStatus::Searching
         } else {
             SearchStatus::NotFound
         }
     }
 
-    fn path(&self) -> Option<Vec<MapPos>> {
+    pub fn path(&self) -> Option<Vec<MapPos>> {
         if let Some(info) = self.visited.get(&self.map.finish) {
             let mut vec = Vec::with_capacity(info.cost as usize);
             let mut current = self.map.finish;
-            while self.visited[&current].position != current {
+            while self.visited[&current].pos != current {
                 vec.push(current);
-                current = self.visited[&current].position;
+                current = self.visited[&current].pos;
             }
             vec.push(current);
             Some(vec)
@@ -311,197 +306,22 @@ impl ShortestPath for AStar {
         }
     }
 
-    fn get_map(&self) -> &Map {
-        &self.map
-    }
-
-    fn get_mut_map(&mut self) -> &mut Map {
-        &mut self.map
-    }
-
-    fn clone_map(&mut self) -> Map {
-        self.map.clone()
-    }
-
-    fn init(&mut self) {
+    pub fn init(&mut self) {
         self.map.clear_path();
         self.queue.clear();
         self.visited.clear();
+        let cost = match self.algorithm {
+            Algorithm::AStar => Map::distance(self.map.start, self.map.finish),
+            _ => 0f64,
+        };
         self.queue.push(PosState {
-            position: self.map.start,
-            cost: Map::distance(self.map.start, self.map.finish),
+            pos: self.map.start,
+            cost,
         });
         self.visited.insert(
             self.map.start,
             PosState {
-                position: self.map.start,
-                cost: 0f64,
-            },
-        );
-    }
-}
-
-pub struct BreadthFirstSearch {
-    map: Map,
-    queue: VecDeque<MapPos>,
-    visited: HashMap<MapPos, MapPos>,
-}
-
-impl ShortestPath for BreadthFirstSearch {
-    fn new(map: Map) -> Self {
-        let queue = VecDeque::new();
-        let visited = HashMap::new();
-        Self {
-            map,
-            queue,
-            visited,
-        }
-    }
-
-    fn next(&mut self) -> SearchStatus {
-        if let Some(current) = self.queue.pop_front() {
-            if current == self.map.finish {
-                return SearchStatus::Found;
-            }
-            for pos in self.map.neighbors(current) {
-                if self.visited.get(&pos).is_none() {
-                    self.queue.push_back(pos);
-                    self.visited.insert(pos, current);
-                    self.map.set_cell(Cell::InQueue, pos);
-                }
-            }
-            self.map.set_cell(Cell::Visited, current);
-            SearchStatus::Searching
-        } else {
-            SearchStatus::NotFound
-        }
-    }
-
-    fn path(&self) -> Option<Vec<MapPos>> {
-        if self.visited.get(&self.map.finish).is_some() {
-            let mut vec = Vec::new();
-            let mut current = self.map.finish;
-            while self.visited[&current] != self.map.start {
-                vec.push(current);
-                current = self.visited[&current];
-            }
-            vec.push(current);
-            vec.push(self.map.start);
-            Some(vec)
-        } else {
-            None
-        }
-    }
-
-    fn get_map(&self) -> &Map {
-        &self.map
-    }
-
-    fn get_mut_map(&mut self) -> &mut Map {
-        &mut self.map
-    }
-
-    fn clone_map(&mut self) -> Map {
-        self.map.clone()
-    }
-
-    fn init(&mut self) {
-        self.map.clear_path();
-        self.queue.clear();
-        self.visited.clear();
-        self.queue.push_back(self.map.start);
-    }
-}
-
-pub struct DijkstrasAlgorithm {
-    map: Map,
-    queue: BinaryHeap<PosState>,
-    visited: HashMap<MapPos, PosState>,
-}
-
-impl ShortestPath for DijkstrasAlgorithm {
-    fn new(map: Map) -> Self {
-        let queue = BinaryHeap::new();
-        let visited = HashMap::new();
-        Self {
-            map,
-            queue,
-            visited,
-        }
-    }
-
-    fn next(&mut self) -> SearchStatus {
-        if let Some(current) = self.queue.pop() {
-            if current.position == self.map.finish {
-                return SearchStatus::Found;
-            }
-            for pos in self.map.neighbors(current.position) {
-                let new_cost =
-                    self.visited[&current.position].cost + Map::distance(current.position, pos);
-                if let Some(info) = self.visited.get(&pos) {
-                    if new_cost >= info.cost {
-                        continue;
-                    }
-                }
-                self.queue.push(PosState {
-                    position: pos,
-                    cost: new_cost,
-                });
-                self.visited.insert(
-                    pos,
-                    PosState {
-                        position: current.position,
-                        cost: new_cost,
-                    },
-                );
-                self.map.set_cell(Cell::InQueue, pos);
-            }
-            self.map.set_cell(Cell::Visited, current.position);
-            SearchStatus::Searching
-        } else {
-            SearchStatus::NotFound
-        }
-    }
-
-    fn path(&self) -> Option<Vec<MapPos>> {
-        if let Some(info) = self.visited.get(&self.map.finish) {
-            let mut vec = Vec::with_capacity(info.cost as usize);
-            let mut current = self.map.finish;
-            while self.visited[&current].position != current {
-                vec.push(current);
-                current = self.visited[&current].position;
-            }
-            vec.push(current);
-            Some(vec)
-        } else {
-            None
-        }
-    }
-
-    fn get_map(&self) -> &Map {
-        &self.map
-    }
-
-    fn get_mut_map(&mut self) -> &mut Map {
-        &mut self.map
-    }
-
-    fn clone_map(&mut self) -> Map {
-        self.map.clone()
-    }
-
-    fn init(&mut self) {
-        self.map.clear_path();
-        self.queue.clear();
-        self.visited.clear();
-        self.queue.push(PosState {
-            position: self.map.start,
-            cost: 0f64,
-        });
-        self.visited.insert(
-            self.map.start,
-            PosState {
-                position: self.map.start,
+                pos: self.map.start,
                 cost: 0f64,
             },
         );
