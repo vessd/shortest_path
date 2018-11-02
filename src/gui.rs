@@ -1,7 +1,7 @@
 use bincode::{deserialize, serialize};
 use gdk::EventMask;
 use gtk::{
-    ButtonExt, ComboBoxExt, ComboBoxTextExt, FileChooserExt, GridExt, GtkWindowExt,
+    ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt, FileChooserExt, GridExt, GtkWindowExt,
     NativeDialogExt, WidgetExt,
 };
 use gtk::{DrawingArea, Inhibit};
@@ -11,6 +11,40 @@ use map::{
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
 use std::fs;
+
+macro_rules! try_message {
+    ($expr:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(err) => {
+                let message = gtk::MessageDialog::new(
+                    None::<&gtk::Window>,
+                    gtk::DialogFlags::MODAL,
+                    gtk::MessageType::Error,
+                    gtk::ButtonsType::Close,
+                    &err.to_string(),
+                );
+                message.run();
+                message.destroy();
+                return;
+            }
+        }
+    };
+}
+
+macro_rules! success_message {
+    ($message:tt) => {
+        let message = gtk::MessageDialog::new(
+            None::<&gtk::Window>,
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Info,
+            gtk::ButtonsType::Ok,
+            $message,
+        );
+        message.run();
+        message.destroy();
+    };
+}
 
 #[derive(Debug, Clone)]
 struct Color {
@@ -296,8 +330,9 @@ impl Widget for Win {
                     Some("Отменить"),
                 );
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
-                    let vec = serialize(self.model.search_algorithm.get_map()).unwrap();
-                    fs::write(file_chooser.get_filename().unwrap(), vec);
+                    let vec = try_message!(serialize(self.model.search_algorithm.get_map()));
+                    try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
+                    success_message!("Карта сохранена");
                 }
             }
             Msg::Open => {
@@ -309,11 +344,12 @@ impl Widget for Win {
                     Some("Отменить"),
                 );
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
-                    let vec = fs::read(file_chooser.get_filename().unwrap()).unwrap();
+                    let vec = try_message!(fs::read(file_chooser.get_filename().unwrap()));
                     self.model
                         .search_algorithm
                         .get_mut_map()
-                        .replace_from(&deserialize(&vec).unwrap());
+                        .replace_from(&try_message!(deserialize(&vec)));
+                    success_message!("Карта загружена");
                 }
             }
             Msg::Quit => gtk::main_quit(),
