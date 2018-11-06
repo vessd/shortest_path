@@ -1,7 +1,7 @@
 use bincode::{deserialize, serialize};
 use gdk::EventMask;
 use gtk::ContainerExt;
-use gtk::{BoxExt, ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt};
+use gtk::{ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt};
 use gtk::{DrawingArea, FileChooserExt, GridExt, GtkWindowExt, Inhibit};
 use gtk::{LabelExt, NativeDialogExt, NotebookExtManual, TextBufferExt, WidgetExt};
 use map::{Algorithm, Cell, Map, MapPos, SearchStatus, ShortestPath};
@@ -197,24 +197,67 @@ impl Widget for Win {
     fn update(&mut self, event: Msg) {
         match event {
             Msg::About => {
-                let text = gtk::TextBuffer::new(None);
-                text.set_text("Для добавления препятствий нужно нажать внутри белой клетки и
-                               не отпуская двигать мышкой в нужном направлении.\n
-                               Перетащите зеленый узел, чтобы установить начальную позицию.\n
-                               Перетащите красный узел, чтобы установить конечную позицию.");
-                let view = gtk::TextView::new_with_buffer(&text);
+                let text_instruction = gtk::TextBuffer::new(None);
+                text_instruction.set_text(
+                    "Для добавления препятствий нажите на белую клетку и\n\
+                     не отпуская двигайте мышкой в нужном направлении.\n\n\
+                     Для удаление препятствий нажите на серую клетку и\n\
+                     не отпуская двигайте мышкой по препятствиям.\n\n\
+                     Перетащите зеленую клетку, чтобы установить начальную позицию.\n\n\
+                     Перетащите красную клетку, чтобы установить конечную позицию."
+                );
+                let view_instruction = gtk::TextView::new_with_buffer(&text_instruction);
+
+                let text_algorithms = gtk::TextBuffer::new(None);
+                text_algorithms.set_text(
+                    "Обход в ширину\n\
+                     Один из простейших алгоритмов обхода графа, являющийся основой\n\
+                     для многих важных алгоритмов для работы с графами.\n\n\
+                     Алгоритм Дейкстры\n\
+                     В ориентированном взвешенном графе G=(V,E), вес рёбер которого\n\
+                     неотрицателен и определяется весовой функцией W:E → R, алгоритмт\n\
+                     Дейкстры находит длины кратчайших путей из заданной вершины S\n\
+                     до всех остальных.\n\n\
+                     А*\n\
+                     Алгоритм поиска, который находит во взвешенном графе маршрут\n\
+                     наименьшей стоимости от начальной вершины до выбранной конечной.",
+                );
+                let view_algorithms = gtk::TextView::new_with_buffer(&text_algorithms);
+
+                let text_about = gtk::TextBuffer::new(None);
+                text_about.set_text(
+                    "Программа «Поиск кратчайшего пути» предназначена для\n\
+                     демонстрации работы алгоритмов поиска кратчашего пути\n\
+                     в известных дискретных средах.\n\n\
+                     Автор: студент группы ИП-16-3 Веселков C.Д."
+                );
+                let view_about = gtk::TextView::new_with_buffer(&text_about);
+
                 let notebook = gtk::Notebook::new();
-                notebook.append_page(&view, None::<&gtk::Label>);
+                notebook.append_page(
+                    &view_about,
+                    Some(&gtk::Label::new(Some("О программе"))),
+                );
+                notebook.append_page(
+                    &view_instruction,
+                    Some(&gtk::Label::new(Some("Инструкция"))),
+                );
+                notebook.append_page(
+                    &view_algorithms,
+                    Some(&gtk::Label::new(Some("Алгоритмы"))),
+                );
                 let dialog = gtk::Dialog::new_with_buttons(
-                    Some("О программе"),
+                    Some("Справка"),
                     Some(&self.window),
                     gtk::DialogFlags::MODAL,
                     &[("Закрыть", gtk::ResponseType::Close.into())],
                 );
+                dialog.set_default_response(gtk::ResponseType::Close.into());
+                dialog.connect_response(|dialog, _| dialog.destroy());
+
                 let dialog_box = dialog.get_content_area();
-                dialog_box.pack_start(&notebook, true, true, 2);
-                dialog.run();
-                dialog.destroy();
+                dialog_box.add(&notebook);
+                dialog.show_all();
             }
             Msg::AlgorithmChange => {
                 let map = self.model.search.map.clone();
