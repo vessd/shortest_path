@@ -1,8 +1,9 @@
 use bincode::{deserialize, serialize};
 use gdk::EventMask;
+use gtk::ContainerExt;
 use gtk::{BoxExt, ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt};
 use gtk::{DrawingArea, FileChooserExt, GridExt, GtkWindowExt, Inhibit};
-use gtk::{LabelExt, NativeDialogExt, NotebookExt, WidgetExt};
+use gtk::{LabelExt, NativeDialogExt, NotebookExtManual, TextBufferExt, WidgetExt};
 use map::{Algorithm, Cell, Map, MapPos, SearchStatus, ShortestPath};
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
@@ -196,6 +197,14 @@ impl Widget for Win {
     fn update(&mut self, event: Msg) {
         match event {
             Msg::About => {
+                let text = gtk::TextBuffer::new(None);
+                text.set_text("Для добавления препятствий нужно нажать внутри белой клетки и
+                               не отпуская двигать мышкой в нужном направлении.\n
+                               Перетащите зеленый узел, чтобы установить начальную позицию.\n
+                               Перетащите красный узел, чтобы установить конечную позицию.");
+                let view = gtk::TextView::new_with_buffer(&text);
+                let notebook = gtk::Notebook::new();
+                notebook.append_page(&view, None::<&gtk::Label>);
                 let dialog = gtk::Dialog::new_with_buttons(
                     Some("О программе"),
                     Some(&self.window),
@@ -203,9 +212,7 @@ impl Widget for Win {
                     &[("Закрыть", gtk::ResponseType::Close.into())],
                 );
                 let dialog_box = dialog.get_content_area();
-                let notebook = gtk::Notebook::new();
-                notebook.set_action_widget();
-                dialog_box.pack_end(&notebook, true, true, 0);
+                dialog_box.pack_start(&notebook, true, true, 2);
                 dialog.run();
                 dialog.destroy();
             }
