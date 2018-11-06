@@ -159,6 +159,16 @@ impl Map {
         }
     }
 
+    pub fn clear(&mut self) {
+        for i in 0..self.rows() {
+            for j in 0..self.cols() {
+                if !(self[i][j] == Cell::Start || self[i][j] == Cell::Finish) {
+                    self[i][j] = Cell::Passable;
+                }
+            }
+        }
+    }
+
     pub fn clear_path(&mut self) {
         self.data
             .iter_mut()
@@ -307,7 +317,6 @@ impl ShortestPath {
     }
 
     pub fn init(&mut self) {
-        self.map.clear_path();
         self.queue.clear();
         self.visited.clear();
         let cost = match self.algorithm {

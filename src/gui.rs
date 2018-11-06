@@ -1,10 +1,8 @@
 use bincode::{deserialize, serialize};
 use gdk::EventMask;
-use gtk::{
-    ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt, FileChooserExt, GridExt, GtkWindowExt,
-    LabelExt, NativeDialogExt, WidgetExt,
-};
-use gtk::{DrawingArea, Inhibit};
+use gtk::{BoxExt, ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt};
+use gtk::{DrawingArea, FileChooserExt, GridExt, GtkWindowExt, Inhibit};
+use gtk::{LabelExt, NativeDialogExt, NotebookExt, WidgetExt};
 use map::{Algorithm, Cell, Map, MapPos, SearchStatus, ShortestPath};
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
@@ -15,32 +13,10 @@ macro_rules! try_message {
         match $expr {
             Ok(val) => val,
             Err(err) => {
-                let message = gtk::MessageDialog::new(
-                    None::<&gtk::Window>,
-                    gtk::DialogFlags::MODAL,
-                    gtk::MessageType::Error,
-                    gtk::ButtonsType::Close,
-                    &err.to_string(),
-                );
-                message.run();
-                message.destroy();
+                Win::error_message(&err.to_string());
                 return;
             }
         }
-    };
-}
-
-macro_rules! success_message {
-    ($message:tt) => {
-        let message = gtk::MessageDialog::new(
-            None::<&gtk::Window>,
-            gtk::DialogFlags::MODAL,
-            gtk::MessageType::Info,
-            gtk::ButtonsType::Ok,
-            $message,
-        );
-        message.run();
-        message.destroy();
     };
 }
 
@@ -125,17 +101,19 @@ pub struct Model {
 
 #[derive(Msg)]
 pub enum Msg {
-    UpdateDrawBuffer,
-    MoveCursor((f64, f64)),
+    About,
+    AlgorithmChange,
     ButtonPress,
     ButtonRelease,
-    FindPath,
+    Clear,
     ClearPath,
+    FindPath,
+    MoveCursor((f64, f64)),
     Next,
-    AlgorithmChange,
-    Save,
     Open,
     Quit,
+    Save,
+    UpdateDrawBuffer,
 }
 
 impl Win {
@@ -152,6 +130,30 @@ impl Win {
             y => (y / f64::from(allocation.width) * self.model.search.map.cols() as f64) as usize,
         };
         MapPos::new(x, y)
+    }
+
+    fn success_message(message: &str) {
+        let dialog = gtk::MessageDialog::new(
+            None::<&gtk::Window>,
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Info,
+            gtk::ButtonsType::Ok,
+            message,
+        );
+        dialog.run();
+        dialog.destroy();
+    }
+
+    fn error_message(message: &str) {
+        let dialog = gtk::MessageDialog::new(
+            None::<&gtk::Window>,
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Error,
+            gtk::ButtonsType::Close,
+            message,
+        );
+        dialog.run();
+        dialog.destroy();
     }
 }
 
@@ -193,6 +195,118 @@ impl Widget for Win {
 
     fn update(&mut self, event: Msg) {
         match event {
+            Msg::About => {
+                let dialog = gtk::Dialog::new_with_buttons(
+                    Some("О программе"),
+                    Some(&self.window),
+                    gtk::DialogFlags::MODAL,
+                    &[("Закрыть", gtk::ResponseType::Close.into())],
+                );
+                let dialog_box = dialog.get_content_area();
+                let notebook = gtk::Notebook::new();
+                notebook.set_action_widget();
+                dialog_box.pack_end(&notebook, true, true, 0);
+                dialog.run();
+                dialog.destroy();
+            }
+            Msg::AlgorithmChange => {
+                let map = self.model.search.map.clone();
+                match self.combo_box.get_active() {
+                    0 => self.model.search = ShortestPath::new(map, Algorithm::BreadthFirstSearch),
+                    1 => self.model.search = ShortestPath::new(map, Algorithm::Dijkstra),
+                    _ => self.model.search = ShortestPath::new(map, Algorithm::AStar),
+                }
+            }
+            Msg::ButtonPress => {
+                self.model.cursor.button_pressed = true;
+                let pos = self.get_cursor_pos();
+                self.model.cursor.cell = match self.model.search.map[pos.x][pos.y] {
+                    Cell::Passable => Cell::Impassable,
+                    Cell::Impassable => Cell::Passable,
+                    c => c,
+                };
+                self.model.search.map[pos.x][pos.y] = self.model.cursor.cell;
+            }
+            Msg::ButtonRelease => self.model.cursor.button_pressed = false,
+            Msg::Clear => {
+                self.model.search.map.clear();
+            }
+            Msg::ClearPath => {
+                self.search_path_button.show();
+                self.clear_path_button.hide();
+                self.drawing_area.set_sensitive(true);
+                self.combo_box.set_sensitive(true);
+                self.save_button.set_sensitive(true);
+                self.open_button.set_sensitive(true);
+                self.clear_button.set_sensitive(true);
+                self.model.path = None;
+                self.model.search.map.clear_path();
+                self.model.status = SearchStatus::NotFound;
+                self.label.set_text("Длина пути:");
+            }
+            Msg::FindPath => {
+                self.model.search.init();
+                self.search_path_button.hide();
+                self.clear_path_button.show();
+                self.drawing_area.set_sensitive(false);
+                self.combo_box.set_sensitive(false);
+                self.save_button.set_sensitive(false);
+                self.open_button.set_sensitive(false);
+                self.clear_button.set_sensitive(false);
+                self.model.status = SearchStatus::Searching;
+            }
+            Msg::MoveCursor(pos) => {
+                self.model.cursor.position = pos;
+                if self.model.cursor.button_pressed {
+                    let pos = self.get_cursor_pos();
+                    self.model.search.map.set_cell(self.model.cursor.cell, pos);
+                }
+            }
+            Msg::Next => {
+                if self.model.status == SearchStatus::Searching {
+                    match self.model.search.next() {
+                        SearchStatus::Found(len) => {
+                            self.model.status = SearchStatus::Found(len);
+                            self.model.path = self.model.search.path();
+                            self.label
+                                .set_text(format!("Длина пути: {:.2}", len).as_str());
+                        }
+                        status => self.model.status = status,
+                    }
+                }
+            }
+            Msg::Open => {
+                let file_chooser = gtk::FileChooserNative::new(
+                    Some("Загрузить карту"),
+                    Some(&self.window),
+                    gtk::FileChooserAction::Open,
+                    Some("Открыть"),
+                    Some("Отменить"),
+                );
+                if file_chooser.run() == gtk::ResponseType::Accept.into() {
+                    let vec = try_message!(fs::read(file_chooser.get_filename().unwrap()));
+                    self.model
+                        .search
+                        .map
+                        .replace_from(&try_message!(deserialize(&vec)));
+                    Win::success_message("Карта загружена");
+                }
+            }
+            Msg::Quit => gtk::main_quit(),
+            Msg::Save => {
+                let file_chooser = gtk::FileChooserNative::new(
+                    Some("Сохранить карту"),
+                    Some(&self.window),
+                    gtk::FileChooserAction::Save,
+                    Some("Сохранить"),
+                    Some("Отменить"),
+                );
+                if file_chooser.run() == gtk::ResponseType::Accept.into() {
+                    let vec = try_message!(serialize(&self.model.search.map));
+                    try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
+                    Win::success_message("Карта сохранена");
+                }
+            }
             Msg::UpdateDrawBuffer => {
                 let allocation = self.drawing_area.get_allocation();
                 let context = self.model.draw_handler.get_context();
@@ -251,99 +365,6 @@ impl Widget for Win {
                     }
                 }
             }
-            Msg::MoveCursor(pos) => {
-                self.model.cursor.position = pos;
-                if self.model.cursor.button_pressed {
-                    let pos = self.get_cursor_pos();
-                    self.model.search.map.set_cell(self.model.cursor.cell, pos);
-                }
-            }
-            Msg::ButtonPress => {
-                self.model.cursor.button_pressed = true;
-                let pos = self.get_cursor_pos();
-                self.model.cursor.cell = match self.model.search.map[pos.x][pos.y] {
-                    Cell::Passable => Cell::Impassable,
-                    Cell::Impassable => Cell::Passable,
-                    c => c,
-                };
-                self.model.search.map[pos.x][pos.y] = self.model.cursor.cell;
-            }
-            Msg::ButtonRelease => self.model.cursor.button_pressed = false,
-            Msg::FindPath => {
-                self.model.search.init();
-                self.search_path_button.hide();
-                self.clear_path_button.show();
-                self.drawing_area.set_sensitive(false);
-                self.combo_box.set_sensitive(false);
-                self.save_button.set_sensitive(false);
-                self.open_button.set_sensitive(false);
-                self.model.status = SearchStatus::Searching;
-            }
-            Msg::ClearPath => {
-                self.search_path_button.show();
-                self.clear_path_button.hide();
-                self.drawing_area.set_sensitive(true);
-                self.combo_box.set_sensitive(true);
-                self.save_button.set_sensitive(true);
-                self.open_button.set_sensitive(true);
-                self.model.path = None;
-                self.model.search.init();
-                self.model.status = SearchStatus::NotFound;
-                self.label.set_text("Длина пути:");
-            }
-            Msg::Next => {
-                if self.model.status == SearchStatus::Searching {
-                    match self.model.search.next() {
-                        SearchStatus::Found(len) => {
-                            self.model.status = SearchStatus::Found(len);
-                            self.model.path = self.model.search.path();
-                            self.label
-                                .set_text(format!("Длина пути: {:.2}", len).as_str());
-                        }
-                        status => self.model.status = status,
-                    }
-                }
-            }
-            Msg::AlgorithmChange => {
-                let map = self.model.search.map.clone();
-                match self.combo_box.get_active() {
-                    0 => self.model.search = ShortestPath::new(map, Algorithm::BreadthFirstSearch),
-                    1 => self.model.search = ShortestPath::new(map, Algorithm::Dijkstra),
-                    _ => self.model.search = ShortestPath::new(map, Algorithm::AStar),
-                }
-            }
-            Msg::Save => {
-                let file_chooser = gtk::FileChooserNative::new(
-                    Some("Сохранить карту"),
-                    Some(&self.window),
-                    gtk::FileChooserAction::Save,
-                    Some("Сохранить"),
-                    Some("Отменить"),
-                );
-                if file_chooser.run() == gtk::ResponseType::Accept.into() {
-                    let vec = try_message!(serialize(&self.model.search.map));
-                    try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
-                    success_message!("Карта сохранена");
-                }
-            }
-            Msg::Open => {
-                let file_chooser = gtk::FileChooserNative::new(
-                    Some("Загрузить карту"),
-                    Some(&self.window),
-                    gtk::FileChooserAction::Open,
-                    Some("Открыть"),
-                    Some("Отменить"),
-                );
-                if file_chooser.run() == gtk::ResponseType::Accept.into() {
-                    let vec = try_message!(fs::read(file_chooser.get_filename().unwrap()));
-                    self.model
-                        .search
-                        .map
-                        .replace_from(&try_message!(deserialize(&vec)));
-                    success_message!("Карта загружена");
-                }
-            }
-            Msg::Quit => gtk::main_quit(),
         }
     }
 
@@ -390,6 +411,27 @@ impl Widget for Win {
                         height: 1,
                     },
                     clicked => Msg::Open,
+                },
+                #[name="clear_button"]
+                gtk::Button {
+                    label: "Очистить карту",
+                    cell: {
+                        left_attach: 4,
+                        top_attach: 18,
+                        width: 4,
+                        height: 1,
+                    },
+                    clicked => Msg::Clear,
+                },
+                gtk::Button {
+                    label: "?",
+                    cell: {
+                        left_attach: 21,
+                        top_attach: 18,
+                        width: 2,
+                        height: 1,
+                    },
+                    clicked => Msg::About,
                 },
                 #[name="combo_box"]
                 gtk::ComboBoxText {
