@@ -1,6 +1,6 @@
+#![windows_subsystem = "windows"]
+
 extern crate bincode;
-//extern crate cairo;
-//extern crate failure;
 extern crate gdk;
 extern crate gtk;
 #[macro_use]

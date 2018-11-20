@@ -9,6 +9,7 @@ use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
 use std::fs;
 
+// макрос для распаковки Result или вывода окна с ошибкой
 macro_rules! try_message {
     ($expr:expr) => {
         match $expr {
@@ -86,12 +87,14 @@ impl Color {
     }
 }
 
+// состояние указателя мыши
 struct Cursor {
     position: (f64, f64),
     button_pressed: bool,
     cell: Cell,
 }
 
+// модель виджета
 pub struct Model {
     draw_handler: DrawHandler<DrawingArea>,
     search: ShortestPath,
@@ -100,6 +103,7 @@ pub struct Model {
     cursor: Cursor,
 }
 
+// сообщения, которые можно отправлять виджету
 #[derive(Msg)]
 pub enum Msg {
     About,
@@ -118,7 +122,9 @@ pub enum Msg {
 }
 
 impl Win {
+    // возвращает координаты клетки на которую указывает указатель мыши
     fn get_cursor_pos(&self) -> MapPos {
+        // размер отображаемой карты
         let allocation = self.drawing_area.get_allocation();
         let x = match self.model.cursor.position.1.round() {
             x if x < 0f64 => 0,
@@ -133,6 +139,7 @@ impl Win {
         MapPos::new(x, y)
     }
 
+    // выводит сообщение об успехе
     fn success_message(message: &str) {
         let dialog = gtk::MessageDialog::new(
             None::<&gtk::Window>,
@@ -145,6 +152,7 @@ impl Win {
         dialog.destroy();
     }
 
+    // выводит сообщение об ошибке
     fn error_message(message: &str) {
         let dialog = gtk::MessageDialog::new(
             None::<&gtk::Window>,
@@ -160,6 +168,7 @@ impl Win {
 
 #[widget]
 impl Widget for Win {
+    // инициализация элементов виджета
     fn init_view(&mut self) {
         self.combo_box.append_text("Поиск в ширину");
         self.combo_box
@@ -176,6 +185,7 @@ impl Widget for Win {
         );
     }
 
+    // инициализация модели виджета
     fn model(size: (usize, usize)) -> Model {
         Model {
             draw_handler: DrawHandler::new().expect("draw handler"),
@@ -191,9 +201,11 @@ impl Widget for Win {
     }
 
     fn subscriptions(&mut self, relm: &Relm<Self>) {
+        // отпровляет сообщение виджету каждые 16 мс
         interval(relm.stream(), 16, || Msg::Next);
     }
 
+    // обработка сообщений виджета
     fn update(&mut self, event: Msg) {
         match event {
             Msg::About => {
@@ -291,10 +303,12 @@ impl Widget for Win {
                 self.clear_button.set_sensitive(true);
                 self.model.path = None;
                 self.model.search.map.clear_path();
+                // сообщения Msg::Next не будут обрабатываться
                 self.model.status = SearchStatus::NotFound;
                 self.label.set_text("Длина пути:");
             }
             Msg::FindPath => {
+                // инициализация поиска
                 self.model.search.init();
                 self.search_path_button.hide();
                 self.clear_path_button.show();
@@ -303,6 +317,7 @@ impl Widget for Win {
                 self.save_button.set_sensitive(false);
                 self.open_button.set_sensitive(false);
                 self.clear_button.set_sensitive(false);
+                // сообщения Msg::Next будут обрабатываться в соотвествии subscriptions
                 self.model.status = SearchStatus::Searching;
             }
             Msg::MoveCursor(pos) => {
@@ -357,8 +372,11 @@ impl Widget for Win {
                     Win::success_message("Карта сохранена");
                 }
             }
+            // сообщение отрисовки
             Msg::UpdateDrawBuffer => {
+                // размер карты
                 let allocation = self.drawing_area.get_allocation();
+                // контекст для рисования
                 let context = self.model.draw_handler.get_context();
                 context.rectangle(
                     0f64,
@@ -368,11 +386,12 @@ impl Widget for Win {
                 );
                 context.set_source_rgb(0.0, 0.0, 0.0);
                 context.fill();
+
                 let cell_width = f64::from(allocation.width) / self.model.search.map.cols() as f64;
                 let cell_height =
                     f64::from(allocation.height) / self.model.search.map.rows() as f64;
 
-                // draw grid
+                // отрисовка карты
                 let border = 1f64;
                 for i in 0..self.model.search.map.rows() {
                     for j in 0..self.model.search.map.cols() {
@@ -395,7 +414,7 @@ impl Widget for Win {
                     }
                 }
 
-                // draw path
+                // отрисовка пути
                 if let Some(ref path) = self.model.path {
                     if path.len() > 1 {
                         let color = Color::yellow();
@@ -419,14 +438,17 @@ impl Widget for Win {
     }
 
     view! {
+        // главное окно
         #[name="window"]
         gtk::Window {
             title: "Поиск кратчайшего пути",
+            // сетка, в которой размещены остальыне виджеты
             gtk::Grid {
                 column_homogeneous: true,
                 row_homogeneous: true,
                 column_spacing: 4,
                 row_spacing: 2,
+                // область для рисования карты
                 #[name="drawing_area"]
                 gtk::DrawingArea {
                     cell: {
@@ -435,6 +457,7 @@ impl Widget for Win {
                         width: 32,
                         height: 18,
                     },
+                    // обработка событий области
                     draw(_, _) => (Msg::UpdateDrawBuffer, Inhibit(false)),
                     motion_notify_event(_, event) => (Msg::MoveCursor(event.get_position()), Inhibit(false)),
                     button_press_event(_, _) => (Msg::ButtonPress, Inhibit(false)),

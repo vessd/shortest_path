@@ -7,10 +7,26 @@ authors = ["Sergey Veselkov <veselkovsd@yandex.ru>"]
 relm = "0.15.0"
 relm-derive = "0.15.0"
 relm-attributes = "0.15.0"
-gtk = { version = "0.5.0", features = ["dox", "v3_20"] }
-gdk = "0.9.0"
-#cairo-rs = "0.5.0"
 serde = "1.0.80"
 serde_derive = "1.0.80"
 bincode = "1.0.1"
-#failure = "0.1.3"
+
+gobject-subclass = "^0"
+glib-sys = "^0"
+gobject-sys = "^0"
+glib = "^0"
+gio = "^0"
+gdk = "^0"
+gdk-pixbuf = "^0"
+gtk = "^0"
+pango = "^0"
+cairo-rs = "^0"
+
+[features]
+default = ["gtk_3_22_30"]
+gtk_3_10 = ["gtk/v3_10"]
+gtk_3_16 = ["gtk_3_10", "gtk/v3_16"]
+gtk_3_18 = ["gtk_3_16", "gtk/v3_18"]
+gtk_3_20 = ["gtk_3_18", "gtk/v3_20"]
+gtk_3_22 = ["gtk_3_20", "gtk/v3_22"]
+gtk_3_22_30 = ["gtk_3_22", "gtk/v3_22_30"]

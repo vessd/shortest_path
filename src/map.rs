@@ -4,6 +4,7 @@ use std::ops::Index;
 use std::ops::IndexMut;
 use std::vec::IntoIter;
 
+// состояния клетки на карте
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Cell {
     Passable,
@@ -14,6 +15,7 @@ pub enum Cell {
     InQueue,
 }
 
+// позиция на карте
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MapPos {
     pub x: usize,
@@ -26,29 +28,7 @@ impl MapPos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PosState {
-    pos: MapPos,
-    cost: f64,
-}
-
-impl Eq for PosState {}
-
-impl Ord for PosState {
-    fn cmp(&self, other: &PosState) -> Ordering {
-        other
-            .cost
-            .partial_cmp(&self.cost)
-            .unwrap_or(Ordering::Equal)
-    }
-}
-
-impl PartialOrd for PosState {
-    fn partial_cmp(&self, other: &PosState) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
+// карта
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Map {
     cols: usize,
@@ -79,9 +59,6 @@ impl Map {
     pub fn new(rows: usize, cols: usize) -> Self {
         //Увеличиваем рамер карты, для того чтобы сделать стену по периметру,
         //это позволит не проверять границы при поиске соседей.
-        if cols < 2 && rows < 2 {
-            panic!("");
-        }
         let start = MapPos::new(0, 0);
         let finish = MapPos::new(rows - 1, cols - 1);
         let cols = cols + 2;
@@ -124,6 +101,7 @@ impl Map {
         self.cols - 2
     }
 
+    // изменеие состояния клетки
     pub fn set_cell(&mut self, cell: Cell, pos: MapPos) {
         if self[pos.x][pos.y] == Cell::Passable {
             match cell {
@@ -159,6 +137,7 @@ impl Map {
         }
     }
 
+    // удаление всех стен
     pub fn clear(&mut self) {
         for i in 0..self.rows() {
             for j in 0..self.cols() {
@@ -169,6 +148,7 @@ impl Map {
         }
     }
 
+    // удаление пути
     pub fn clear_path(&mut self) {
         self.data
             .iter_mut()
@@ -176,11 +156,12 @@ impl Map {
             .for_each(|c| *c = Cell::Passable)
     }
 
-    //евклидово расстояние
+    // рассчёт евклидова расстояния
     fn distance(p: MapPos, q: MapPos) -> f64 {
         ((p.x as f64 - q.x as f64).powi(2) + (p.y as f64 - q.y as f64).powi(2)).sqrt()
     }
 
+    // поиск сосдедей доступных для перехода
     fn neighbors(&self, pos: MapPos) -> IntoIter<MapPos> {
         let mut vec = Vec::with_capacity(8);
         let mut s = [false; 4];
@@ -223,6 +204,7 @@ impl Map {
         vec.into_iter()
     }
 
+    // загрузка карты
     pub fn replace_from(&mut self, map: &Map) {
         self.cols = map.cols;
         self.data.clear();
@@ -232,6 +214,7 @@ impl Map {
     }
 }
 
+// состояние поиска пути
 #[derive(PartialEq)]
 pub enum SearchStatus {
     Found(f64),
@@ -239,6 +222,7 @@ pub enum SearchStatus {
     Searching,
 }
 
+// алгоритм поиска пути
 #[derive(Debug, PartialEq)]
 pub enum Algorithm {
     BreadthFirstSearch,
@@ -246,6 +230,32 @@ pub enum Algorithm {
     AStar,
 }
 
+// родительская клетка и стоимость пути
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PosState {
+    pos: MapPos,
+    cost: f64,
+}
+
+impl Eq for PosState {}
+
+// обратный порядок сравнения
+impl Ord for PosState {
+    fn cmp(&self, other: &PosState) -> Ordering {
+        other
+            .cost
+            .partial_cmp(&self.cost)
+            .unwrap_or(Ordering::Equal)
+    }
+}
+
+impl PartialOrd for PosState {
+    fn partial_cmp(&self, other: &PosState) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// контекст поиска пути
 pub struct ShortestPath {
     pub map: Map,
     queue: BinaryHeap<PosState>,
@@ -264,6 +274,7 @@ impl ShortestPath {
         }
     }
 
+    // следующая итерация поиска
     pub fn next(&mut self) -> SearchStatus {
         if let Some(current) = self.queue.pop() {
             if current.pos == self.map.finish {
@@ -301,6 +312,7 @@ impl ShortestPath {
         }
     }
 
+    // построение пути
     pub fn path(&self) -> Option<Vec<MapPos>> {
         if let Some(info) = self.visited.get(&self.map.finish) {
             let mut vec = Vec::with_capacity(info.cost as usize);
@@ -316,6 +328,7 @@ impl ShortestPath {
         }
     }
 
+    // инициализация поиска в соответствии состояния карты
     pub fn init(&mut self) {
         self.queue.clear();
         self.visited.clear();
