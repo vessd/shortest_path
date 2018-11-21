@@ -3,7 +3,7 @@ use gdk::EventMask;
 use gtk::ContainerExt;
 use gtk::{ButtonExt, ComboBoxExt, ComboBoxTextExt, DialogExt};
 use gtk::{DrawingArea, FileChooserExt, GridExt, GtkWindowExt, Inhibit};
-use gtk::{LabelExt, NotebookExtManual, TextBufferExt, WidgetExt};
+use gtk::{LabelExt, NativeDialogExt, NotebookExtManual, TextBufferExt, WidgetExt};
 use map::{Algorithm, Cell, Map, MapPos, SearchStatus, ShortestPath};
 use relm::{interval, DrawHandler, Relm, Widget};
 use relm_attributes::widget;
@@ -140,9 +140,9 @@ impl Win {
     }
 
     // выводит сообщение об успехе
-    fn success_message(&self, message: &str) {
+    fn success_message(message: &str) {
         let dialog = gtk::MessageDialog::new(
-            Some(&self.window),
+            None::<&gtk::Window>,
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Info,
             gtk::ButtonsType::Ok,
@@ -341,14 +341,12 @@ impl Widget for Win {
                 }
             }
             Msg::Open => {
-                let file_chooser = gtk::FileChooserDialog::with_buttons(
+                let file_chooser = gtk::FileChooserNative::new(
                     Some("Загрузить карту"),
                     Some(&self.window),
                     gtk::FileChooserAction::Open,
-                    &[
-                        ("Отменить", gtk::ResponseType::Cancel),
-                        ("Открыть", gtk::ResponseType::Accept),
-                    ],
+                    Some("Открыть"),
+                    Some("Отменить"),
                 );
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
                     let vec = try_message!(fs::read(file_chooser.get_filename().unwrap()));
@@ -356,30 +354,22 @@ impl Widget for Win {
                         .search
                         .map
                         .replace_from(&try_message!(deserialize(&vec)));
-                    file_chooser.destroy();
-                    self.success_message("Карта загружена");
-                } else {
-                    file_chooser.destroy();
+                    Win::success_message("Карта загружена");
                 }
             }
             Msg::Quit => gtk::main_quit(),
             Msg::Save => {
-                let file_chooser = gtk::FileChooserDialog::with_buttons(
+                let file_chooser = gtk::FileChooserNative::new(
                     Some("Сохранить карту"),
                     Some(&self.window),
                     gtk::FileChooserAction::Save,
-                    &[
-                        ("Отменить", gtk::ResponseType::Cancel),
-                        ("Сохранить", gtk::ResponseType::Accept),
-                    ],
+                    Some("Сохранить"),
+                    Some("Отменить"),
                 );
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
                     let vec = try_message!(serialize(&self.model.search.map));
                     try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
-                    file_chooser.destroy();
-                    self.success_message("Карта сохранена");
-                } else {
-                    file_chooser.destroy();
+                    Win::success_message("Карта сохранена");
                 }
             }
             // сообщение отрисовки
