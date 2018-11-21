@@ -140,9 +140,9 @@ impl Win {
     }
 
     // выводит сообщение об успехе
-    fn success_message(message: &str) {
+    fn success_message(&self, message: &str) {
         let dialog = gtk::MessageDialog::new(
-            None::<&gtk::Window>,
+            Some(&self.window),
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Info,
             gtk::ButtonsType::Ok,
@@ -354,7 +354,7 @@ impl Widget for Win {
                         .search
                         .map
                         .replace_from(&try_message!(deserialize(&vec)));
-                    Win::success_message("Карта загружена");
+                    self.success_message("Карта загружена");
                 }
             }
             Msg::Quit => gtk::main_quit(),
@@ -369,7 +369,7 @@ impl Widget for Win {
                 if file_chooser.run() == gtk::ResponseType::Accept.into() {
                     let vec = try_message!(serialize(&self.model.search.map));
                     try_message!(fs::write(file_chooser.get_filename().unwrap(), vec));
-                    Win::success_message("Карта сохранена");
+                    self.success_message("Карта сохранена");
                 }
             }
             // сообщение отрисовки
